@@ -13,17 +13,13 @@ async function run() {
         const supplierCount = await db.collection("supplierList").countDocuments();
         const stockCount = await db.collection("stockList").countDocuments();
         
-        console.log("COUNTS:");
-        console.log({ salesCount, purchaseCount, customerCount, supplierCount, stockCount });
         
         if (salesCount > 0) {
             const sampleSale = await db.collection("salesInvoiceList").findOne();
-            console.log("\nSAMPLE SALE:", JSON.stringify(sampleSale, null, 2));
         }
         
         if (stockCount > 0) {
             const sampleStock = await db.collection("stockList").findOne();
-            console.log("\nSAMPLE STOCK:", JSON.stringify(sampleStock, null, 2));
         }
     } catch (e) {
         console.error(e);

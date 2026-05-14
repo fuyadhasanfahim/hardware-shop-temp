@@ -8,7 +8,6 @@ import {
 } from "firebase/auth";
 import auth from "./firebase.config";
 import axios from "axios";
-import useAxiosProtect from "./Components/hooks/useAxiosProtect";
 
 export const ContextData = createContext(null);
 
@@ -38,7 +37,6 @@ const Provider = ({ children }) => {
   const [searchCustomer, setSearchCustomer] = useState("");
   const [tokenReady, setTokenReady] = useState(false);
 
-  const axiosProtect = useAxiosProtect();
 
   let userName;
   user?.email === "asad4design@gmail.com"
@@ -56,7 +54,7 @@ const Provider = ({ children }) => {
     const token = localStorage.getItem("jwtToken");
     if (token) {
       try {
-        const response = await axios.post("http://localhost:9000/validate-token", { token });
+        const response = await axios.post(`${import.meta.env.VITE_API_URL}/validate-token`, { token });
         if (response.data.success) {
           setUser(response.data.user); // Set user if token is valid
           setTokenReady(true);

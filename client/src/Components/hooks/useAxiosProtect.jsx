@@ -5,12 +5,12 @@ import { toast } from 'react-toastify';
 
 // Create axios instance
 const axiosProtect = axios.create({
-    baseURL: 'http://localhost:9000',
+    baseURL: import.meta.env.VITE_API_URL,
 });
 
 // Axios Interceptor Hook
 const useAxiosProtect = () => {
-    const { logOut } = useContext(ContextData) || {};  // Fallback to avoid error
+    const { logOut } = useContext(ContextData) || {}; // Fallback to avoid error
 
     useEffect(() => {
         // Request Interceptor to add token
@@ -18,11 +18,11 @@ const useAxiosProtect = () => {
             (config) => {
                 const token = localStorage.getItem('jwtToken');
                 if (token) {
-                    config.headers.Authorization = `Bearer ${token}`;  // Add token to headers
+                    config.headers.Authorization = `Bearer ${token}`; // Add token to headers
                 }
                 return config;
             },
-            (error) => Promise.reject(error)
+            (error) => Promise.reject(error),
         );
 
         // Response Interceptor to handle errors
@@ -38,11 +38,11 @@ const useAxiosProtect = () => {
                         // Redirect manually using window.location
                         window.location.href = '/login'; // Redirect to login page
                     } catch (err) {
-                        toast.error(err.message || "Error during logout");
+                        toast.error(err.message || 'Error during logout');
                     }
                 }
                 return Promise.reject(error);
-            }
+            },
         );
 
         // Cleanup interceptors on unmount

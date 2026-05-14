@@ -1,19 +1,19 @@
-const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
-const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
-require("dotenv").config();
-const fs = require("fs");
-const XLSX = require("xlsx");
-const { format } = require("date-fns");
-const { setupDailySummaryCron } = require("./utils/cronJobs");
-const AutoPilotEngine = require("./utils/autoPilotEngine");
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+require('dotenv').config();
+const fs = require('fs');
+const XLSX = require('xlsx');
+const { format } = require('date-fns');
+const { setupDailySummaryCron } = require('./utils/cronJobs');
+const AutoPilotEngine = require('./utils/autoPilotEngine');
 
 const app = express();
 app.use(
     cors({
-        origin: ["https://store.mozumdarhat.com"],
+        origin: process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',') : [],
         credentials: true,
     }),
 );
@@ -25,18 +25,16 @@ app.use(express.json());
 
 const port = process.env.PORT || 9000;
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const moment = require("moment");
-const sendSMS = require("./utils/sendSMS");
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const moment = require('moment');
+const sendSMS = require('./utils/sendSMS');
 
 // Office
 const uri = process.env.MONGO_URI;
-console.log("URI: ", uri);
-console.log("MONGO URI: ", process.env.MONGO_URI);
 
 if (!uri) {
     console.error(
-        "Error: Mongo DB connection string is not defined in environment variables.",
+        'Error: Mongo DB connection string is not defined in environment variables.',
     );
     process.exit(1);
 }
@@ -49,28 +47,28 @@ const client = new MongoClient(uri, {
     },
 });
 
-app.get("/", (req, res) => {
-    res.send("Hello World!");
+app.get('/', (req, res) => {
+    res.send('Hello World!');
 });
 
 // Middleware to verify JWT
 const verifyToken = (req, res, next) => {
-    const authHeader = req.headers["authorization"];
+    const authHeader = req.headers['authorization'];
 
     if (!authHeader) {
-        return res.status(401).send({ message: "Access forbidden" });
+        return res.status(401).send({ message: 'Access forbidden' });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.split(' ')[1];
     if (!token) {
-        return res.status(401).send({ message: "No authorization" });
+        return res.status(401).send({ message: 'No authorization' });
     }
 
     jwt.verify(token, process.env.TOKEN_SECRET, (err, decoded) => {
         if (err) {
             return res
                 .status(403)
-                .send({ message: "Forbidden: Invalid token" });
+                .send({ message: 'Forbidden: Invalid token' });
         }
         req.user = decoded;
         next();
@@ -78,26 +76,27 @@ const verifyToken = (req, res, next) => {
 };
 
 // JWT token generation
-app.post("/jwt", (req, res) => {
+app.post('/jwt', (req, res) => {
     const { email } = req.body;
     if (!email) {
-        return res.status(400).send({ message: "Email is required" });
+        return res.status(400).send({ message: 'Email is required' });
     }
 
     const token = jwt.sign({ email }, process.env.TOKEN_SECRET, {
-        expiresIn: "24h",
+        expiresIn: '24h',
     });
     res.send({ success: true, token });
 });
 
 // JWT token validation route
-app.post("/validate-token", (req, res) => {
-    const token = req.headers.authorization?.split(" ")[1]; // Extract token from 'Authorization' header
+app.post('/validate-token', (req, res) => {
+    // Extract token from 'Authorization' header OR from request body
+    const token = req.headers.authorization?.split(' ')[1] || req.body?.token;
 
     if (!token) {
         return res
             .status(400)
-            .send({ success: false, message: "Forbidden access" });
+            .send({ success: false, message: 'Forbidden access' });
     }
 
     // Verify the token
@@ -105,7 +104,7 @@ app.post("/validate-token", (req, res) => {
         if (err) {
             return res
                 .status(401)
-                .send({ success: false, message: "Invalid or expired token" });
+                .send({ success: false, message: 'Invalid or expired token' });
         }
 
         // If token is valid, respond with the user data
@@ -113,16 +112,16 @@ app.post("/validate-token", (req, res) => {
     });
 });
 
-app.post("/logOut", async (req, res) => {
-    res.clearCookie("token", { maxAge: 0 }).send({ success: true });
+app.post('/logOut', async (req, res) => {
+    res.clearCookie('token', { maxAge: 0 }).send({ success: true });
 });
 
 // Daily SMS Summary logic removed (moved to utils/cronJobs.js)
 
 // ************************************************************
 const formatPhoneNumber = (number) => {
-    if (number.startsWith("0")) {
-        return "880" + number.slice(1);
+    if (number.startsWith('0')) {
+        return '880' + number.slice(1);
     }
     return number;
 };
@@ -130,61 +129,60 @@ const formatPhoneNumber = (number) => {
 
 async function run() {
     try {
-        const database = client.db("hardware_store");
-        console.log(database);
-        const debtDB = client.db("debtMaintain");
+        const database = client.db('hardware_store');
+        const debtDB = client.db('debtMaintain');
         // *********************************************************************************************
-        const borrowerCollections = debtDB.collection("borrowerList");
-        const lenderCollections = debtDB.collection("lenderList");
+        const borrowerCollections = debtDB.collection('borrowerList');
+        const lenderCollections = debtDB.collection('lenderList');
 
         const totalDebtBalanceCollections =
-            debtDB.collection("currentBalanceList");
+            debtDB.collection('currentBalanceList');
         const totalLendBalanceCollections =
-            debtDB.collection("lenderBalanceList");
+            debtDB.collection('lenderBalanceList');
 
-        const allDebtTransactions = debtDB.collection("transactionList");
-        const allLendTransactions = debtDB.collection("lenderTransactionList");
+        const allDebtTransactions = debtDB.collection('transactionList');
+        const allLendTransactions = debtDB.collection('lenderTransactionList');
 
         // **********************************************************************************************
 
-        const categoryCollections = database.collection("categoryList");
-        const brandCollections = database.collection("brandList");
-        const unitCollections = database.collection("unitList");
-        const productCollections = database.collection("productList");
-        const supplierCollections = database.collection("supplierList");
-        const transactionCollections = database.collection("transactionList");
-        const mainBalanceCollections = database.collection("mainBalanceList");
+        const categoryCollections = database.collection('categoryList');
+        const brandCollections = database.collection('brandList');
+        const unitCollections = database.collection('unitList');
+        const productCollections = database.collection('productList');
+        const supplierCollections = database.collection('supplierList');
+        const transactionCollections = database.collection('transactionList');
+        const mainBalanceCollections = database.collection('mainBalanceList');
         const costingBalanceCollections =
-            database.collection("costingBalanceList");
+            database.collection('costingBalanceList');
         const tempPurchaseProductCollections = database.collection(
-            "tempPurchaseProductList",
+            'tempPurchaseProductList',
         );
         const tempSalesProductCollections = database.collection(
-            "tempSalesProductList",
+            'tempSalesProductList',
         );
         const tempQuotationProductCollections = database.collection(
-            "tempQuotationProductList",
+            'tempQuotationProductList',
         );
-        const stockCollections = database.collection("stockList");
+        const stockCollections = database.collection('stockList');
         const purchaseInvoiceCollections = database.collection(
-            "purchaseInvoiceList",
+            'purchaseInvoiceList',
         );
-        const salesInvoiceCollections = database.collection("salesInvoiceList");
-        const quotationCollections = database.collection("quotationList");
-        const customerCollections = database.collection("customerList");
-        const supplierDueCollections = database.collection("supplierDueList");
-        const customerDueCollections = database.collection("customerDueList");
-        const profitCollections = database.collection("profitList");
+        const salesInvoiceCollections = database.collection('salesInvoiceList');
+        const quotationCollections = database.collection('quotationList');
+        const customerCollections = database.collection('customerList');
+        const supplierDueCollections = database.collection('supplierDueList');
+        const customerDueCollections = database.collection('customerDueList');
+        const profitCollections = database.collection('profitList');
         const supplierDueBalanceCollections = database.collection(
-            "supplierDueBalanceList",
+            'supplierDueBalanceList',
         );
         const customerDueBalanceCollections = database.collection(
-            "customerDueBalanceList",
+            'customerDueBalanceList',
         );
-        const returnSalesCollections = database.collection("returnSalesList");
+        const returnSalesCollections = database.collection('returnSalesList');
         const returnPurchaseCollections =
-            database.collection("returnPurchaseList");
-        const dailySummaryCollections = database.collection("dailySummaryList");
+            database.collection('returnPurchaseList');
+        const dailySummaryCollections = database.collection('dailySummaryList');
 
         // ****************************************************************************
         // const result = await customerDueCollections.find(
@@ -207,10 +205,10 @@ async function run() {
 
         // ****************************************************************************
         // jwt
-        app.post("/jwt", (req, res) => {
+        app.post('/jwt', (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.TOKEN_SECRET, {
-                expiresIn: "24h",
+                expiresIn: '24h',
             });
             res.send({ success: true, token }); // Send the token in the response
         });
@@ -218,46 +216,60 @@ async function run() {
         // Initialize Cron Job
         setupDailySummaryCron(database, debtDB);
 
-        app.post("/logOut", async (req, res) => {
-            res.clearCookie("token", { maxAge: 0 }).send({ success: true });
+        app.post('/logOut', async (req, res) => {
+            res.clearCookie('token', { maxAge: 0 }).send({ success: true });
         });
 
         // --- Auto-Pilot Engine Integration ---
-        
-        // Scheduled task running everyday at 23:30 to generate simulated activity
-        if (process.env.SIMULATION_MODE === "true") {
-            const cron = require("node-cron");
-            cron.schedule("30 23 * * *", async () => {
+
+        // Scheduled periodic simulator running every 30 minutes during business hours
+        if (process.env.SIMULATION_MODE === 'true') {
+            const cron = require('node-cron');
+            cron.schedule('*/30 9-21 * * *', async () => {
                 try {
-                    const targetDate = format(new Date(), "dd.MM.yyyy");
-                    console.log(`[Cron AutoPilot] Starting automated daily generation for ${targetDate}`);
-                    await AutoPilotEngine.simulateDay(database, debtDB, targetDate);
+                    const targetDate = format(new Date(), 'dd.MM.yyyy');
+                    await AutoPilotEngine.processIncrementalStep(
+                        database,
+                        debtDB,
+                        targetDate,
+                    );
                 } catch (error) {
-                    console.error("[Cron AutoPilot Error]", error);
+                    console.error('[Cron AutoPilot Incremental Error]', error);
                 }
             });
-            console.log("[Cron] AutoPilot simulation daily scheduler registered at 23:30.");
         }
 
         // Trigger manual simulation for testing/backfilling
-        app.get("/api/simulate-day", async (req, res) => {
-            if (process.env.SIMULATION_MODE !== "true") {
-                return res.status(403).json({ success: false, message: "Simulation is disabled on this server." });
+        app.get('/api/simulate-day', async (req, res) => {
+            if (process.env.SIMULATION_MODE !== 'true') {
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        message: 'Simulation is disabled on this server.',
+                    });
             }
             try {
-                const targetDate = req.query.date || format(new Date(), "dd.MM.yyyy");
-                const result = await AutoPilotEngine.simulateDay(database, debtDB, targetDate);
+                const targetDate =
+                    req.query.date || format(new Date(), 'dd.MM.yyyy');
+                const result = await AutoPilotEngine.simulateDay(
+                    database,
+                    debtDB,
+                    targetDate,
+                );
                 res.json(result);
             } catch (error) {
-                console.error("[API Simulation Error]", error);
+                console.error('[API Simulation Error]', error);
                 res.status(500).json({ success: false, error: error.message });
             }
         });
 
         // Get current simulation settings
-        app.get("/api/simulate-settings", async (req, res) => {
+        app.get('/api/simulate-settings', async (req, res) => {
             try {
-                const settings = await database.collection("autoPilotSettings").findOne();
+                const settings = await database
+                    .collection('autoPilotSettings')
+                    .findOne();
                 res.json(settings);
             } catch (error) {
                 res.status(500).json({ error: error.message });
@@ -265,18 +277,36 @@ async function run() {
         });
 
         // Update simulation parameters dynamically
-        app.post("/api/simulate-settings", async (req, res) => {
+        app.post('/api/simulate-settings', async (req, res) => {
             try {
-                const { isActive, targetDailySalesMin, targetDailySalesMax, targetSupplierDueAvg, targetSupplierDueVariance } = req.body;
+                const {
+                    isActive,
+                    targetDailySalesMin,
+                    targetDailySalesMax,
+                    targetSupplierDueAvg,
+                    targetSupplierDueVariance,
+                } = req.body;
                 const updateObj = {};
                 if (isActive !== undefined) updateObj.isActive = isActive;
-                if (targetDailySalesMin !== undefined) updateObj.targetDailySalesMin = Number(targetDailySalesMin);
-                if (targetDailySalesMax !== undefined) updateObj.targetDailySalesMax = Number(targetDailySalesMax);
-                if (targetSupplierDueAvg !== undefined) updateObj.targetSupplierDueAvg = Number(targetSupplierDueAvg);
-                if (targetSupplierDueVariance !== undefined) updateObj.targetSupplierDueVariance = Number(targetSupplierDueVariance);
+                if (targetDailySalesMin !== undefined)
+                    updateObj.targetDailySalesMin = Number(targetDailySalesMin);
+                if (targetDailySalesMax !== undefined)
+                    updateObj.targetDailySalesMax = Number(targetDailySalesMax);
+                if (targetSupplierDueAvg !== undefined)
+                    updateObj.targetSupplierDueAvg =
+                        Number(targetSupplierDueAvg);
+                if (targetSupplierDueVariance !== undefined)
+                    updateObj.targetSupplierDueVariance = Number(
+                        targetSupplierDueVariance,
+                    );
 
-                await database.collection("autoPilotSettings").updateOne({}, { $set: updateObj }, { upsert: true });
-                res.json({ success: true, message: "Settings updated successfully" });
+                await database
+                    .collection('autoPilotSettings')
+                    .updateOne({}, { $set: updateObj }, { upsert: true });
+                res.json({
+                    success: true,
+                    message: 'Settings updated successfully',
+                });
             } catch (error) {
                 res.status(500).json({ error: error.message });
             }
@@ -285,7 +315,7 @@ async function run() {
         // -------------------------------------
 
         // add product.............................................................
-        app.post("/addProducts", async (req, res) => {
+        app.post('/addProducts', async (req, res) => {
             const { product, categoryName, brandName, unitName } = req.body;
             const productName = product;
 
@@ -307,7 +337,7 @@ async function run() {
                     parseInt(latestProduct.productCode.toString().slice(-5)) +
                     1;
                 productCode = parseInt(
-                    `${categoryCode}${numericPart.toString().padStart(5, "0")}`,
+                    `${categoryCode}${numericPart.toString().padStart(5, '0')}`,
                 );
             } else {
                 // If no product exists for the category, start with 1
@@ -316,7 +346,7 @@ async function run() {
 
             const isExist = await productCollections.findOne({ productName });
             if (isExist) {
-                res.json("Product already exists");
+                res.json('Product already exists');
             } else {
                 const result = await productCollections.insertOne({
                     productName,
@@ -331,7 +361,7 @@ async function run() {
 
         // New sale product (filtered collection for input)
         // New sale product (full collection for input)
-        app.get("/newSaleProducts", async (req, res) => {
+        app.get('/newSaleProducts', async (req, res) => {
             try {
                 const products = await productCollections
                     .find()
@@ -339,15 +369,15 @@ async function run() {
                     .toArray();
                 res.send({ products });
             } catch (error) {
-                console.error("Error fetching products:", error);
+                console.error('Error fetching products:', error);
                 res.status(500).send(
-                    "An error occurred while fetching products.",
+                    'An error occurred while fetching products.',
                 );
             }
         });
 
         // New purchase product (full collection for input)
-        app.get("/newPurchaseProducts", async (req, res) => {
+        app.get('/newPurchaseProducts', async (req, res) => {
             try {
                 const products = await productCollections
                     .find()
@@ -355,19 +385,19 @@ async function run() {
                     .toArray();
                 res.send({ products });
             } catch (error) {
-                console.error("Error fetching products:", error);
+                console.error('Error fetching products:', error);
                 res.status(500).send(
-                    "An error occurred while fetching products.",
+                    'An error occurred while fetching products.',
                 );
             }
         });
 
         // show products
-        app.get("/products", async (req, res) => {
+        app.get('/products', async (req, res) => {
             const page = parseInt(req.query.page) || 1;
             const size = parseInt(req.query.size) || 20;
-            const search = req.query.search || "";
-            const disablePagination = req.query.disablePagination === "true";
+            const search = req.query.search || '';
+            const disablePagination = req.query.disablePagination === 'true';
 
             // Numeric search logic remains unchanged
             let numericSearch = parseFloat(search);
@@ -379,10 +409,10 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { productName: { $regex: new RegExp(search, "i") } },
-                          { categoryName: { $regex: new RegExp(search, "i") } },
-                          { brandName: { $regex: new RegExp(search, "i") } },
-                          { unitName: { $regex: new RegExp(search, "i") } },
+                          { productName: { $regex: new RegExp(search, 'i') } },
+                          { categoryName: { $regex: new RegExp(search, 'i') } },
+                          { brandName: { $regex: new RegExp(search, 'i') } },
+                          { unitName: { $regex: new RegExp(search, 'i') } },
                           ...(numericSearch !== null
                               ? [{ productCode: numericSearch }]
                               : []),
@@ -413,15 +443,15 @@ async function run() {
 
                 res.send({ products, count });
             } catch (error) {
-                console.error("Error fetching products:", error);
+                console.error('Error fetching products:', error);
                 res.status(500).send(
-                    "An error occurred while fetching products.",
+                    'An error occurred while fetching products.',
                 );
             }
         });
 
         // update product
-        app.put("/updateProduct/:id", async (req, res) => {
+        app.put('/updateProduct/:id', async (req, res) => {
             const id = req.params.id;
             const {
                 updateProductName,
@@ -469,7 +499,7 @@ async function run() {
                             latestProduct.productCode.toString().slice(-5),
                         ) + 1;
                     productCode = parseInt(
-                        `${categoryCode}${numericPart.toString().padStart(5, "0")}`,
+                        `${categoryCode}${numericPart.toString().padStart(5, '0')}`,
                     );
                 } else {
                     productCode = parseInt(`${categoryCode}00001`);
@@ -514,7 +544,7 @@ async function run() {
         });
 
         // delete product
-        app.delete("/delete/:id", async (req, res) => {
+        app.delete('/delete/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await productCollections.deleteOne(query);
@@ -522,7 +552,7 @@ async function run() {
         });
 
         // add category collection
-        app.post("/addCategory", async (req, res) => {
+        app.post('/addCategory', async (req, res) => {
             const { categoryValue, categoryCodeValue } = req.body;
             const categoryInfo = {
                 category: categoryValue,
@@ -538,7 +568,7 @@ async function run() {
             });
 
             if (isExist) {
-                res.json("Category already exists");
+                res.json('Category already exists');
             } else if (isCategoryCode) {
                 res.json(`Category code used for ${isCategoryCode.category}`);
             } else {
@@ -548,17 +578,17 @@ async function run() {
             }
         });
         // show category collection
-        app.get("/categories", async (req, res) => {
+        app.get('/categories', async (req, res) => {
             const result = await categoryCollections.find().toArray();
             res.send(result);
         });
 
         // add brand collection
-        app.post("/brands/:brand", async (req, res) => {
+        app.post('/brands/:brand', async (req, res) => {
             const brandName = { brand: req.params.brand };
             const isExist = await brandCollections.findOne(brandName);
             if (isExist) {
-                res.json("Brand already exists");
+                res.json('Brand already exists');
             } else {
                 const result = await brandCollections.insertOne(brandName);
                 res.send(result);
@@ -566,17 +596,17 @@ async function run() {
         });
 
         // show brand collections
-        app.get("/brands", async (req, res) => {
+        app.get('/brands', async (req, res) => {
             const result = await brandCollections.find().toArray();
             res.send(result);
         });
 
         // add unit collection
-        app.post("/units/:unit", async (req, res) => {
+        app.post('/units/:unit', async (req, res) => {
             const unitName = { unit: req.params.unit };
             const isExist = await unitCollections.findOne(unitName);
             if (isExist) {
-                res.json("Brand already exists");
+                res.json('Brand already exists');
             } else {
                 const result = await unitCollections.insertOne(unitName);
                 res.send(result);
@@ -584,13 +614,13 @@ async function run() {
         });
 
         // show unit collections
-        app.get("/units", async (req, res) => {
+        app.get('/units', async (req, res) => {
             const result = await unitCollections.find().toArray();
             res.send(result);
         });
 
         // add supplier.....................................
-        app.post("/addSupplier", async (req, res) => {
+        app.post('/addSupplier', async (req, res) => {
             const supplierInfo = req.body;
             const { contactNumber } = supplierInfo;
             const isSupplierExist = await supplierCollections.findOne({
@@ -611,7 +641,7 @@ async function run() {
             const newSupplierInfo = { ...supplierInfo, serial: nextSerial };
 
             if (isSupplierExist) {
-                res.json("Supplier already exists with the mobile number");
+                res.json('Supplier already exists with the mobile number');
             } else {
                 const result =
                     await supplierCollections.insertOne(newSupplierInfo);
@@ -620,10 +650,10 @@ async function run() {
         });
 
         // show supplier
-        app.get("/suppliers", async (req, res) => {
+        app.get('/suppliers', async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
             let numericSearch = parseFloat(search);
             if (isNaN(numericSearch)) {
                 numericSearch = null;
@@ -632,7 +662,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { supplierName: { $regex: new RegExp(search, "i") } },
+                          { supplierName: { $regex: new RegExp(search, 'i') } },
                           {
                               serial: numericSearch
                                   ? numericSearch
@@ -640,17 +670,17 @@ async function run() {
                           },
                           {
                               contactPerson: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               supplierAddress: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                       ],
@@ -669,7 +699,7 @@ async function run() {
         });
 
         // update supplier
-        app.put("/updateSupplier/:id", async (req, res) => {
+        app.put('/updateSupplier/:id', async (req, res) => {
             const id = req.params.id;
             const filter = { _id: new ObjectId(id) };
             const {
@@ -686,7 +716,7 @@ async function run() {
             });
 
             if (isSupplierExist) {
-                res.json("Supplier already exists with the mobile number");
+                res.json('Supplier already exists with the mobile number');
                 return; // Exit early if supplier exists with the same contact number
             }
 
@@ -725,7 +755,7 @@ async function run() {
         });
 
         // delete supplier
-        app.delete("/deleteSupplier/:id", async (req, res) => {
+        app.delete('/deleteSupplier/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await supplierCollections.deleteOne(query);
@@ -733,7 +763,7 @@ async function run() {
         });
 
         // add total balance
-        app.post("/addBalance", async (req, res) => {
+        app.post('/addBalance', async (req, res) => {
             const { note, date, type, userName } = req.body;
             const parseAmount = parseFloat(req.body.confirmAmount);
             const newBalance = parseFloat(parseAmount.toFixed(2));
@@ -782,7 +812,7 @@ async function run() {
         });
 
         // costing balance****************************************************************
-        app.post("/costingBalance", async (req, res) => {
+        app.post('/costingBalance', async (req, res) => {
             const { note, date, type, userName } = req.body;
             const parseAmount = parseFloat(req.body.confirmCostAmount);
             const newCostingBalance = parseFloat(parseAmount.toFixed(2));
@@ -797,7 +827,7 @@ async function run() {
                     },
                 );
             } else {
-                return res.json("Insufficient balance");
+                return res.json('Insufficient balance');
             }
 
             const existingCostingBalanceDoc =
@@ -875,12 +905,12 @@ async function run() {
         // costing balance****************************************************************
 
         // show main balance only
-        app.get("/mainBalance", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/mainBalance', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const result = await mainBalanceCollections.find().toArray();
@@ -888,12 +918,12 @@ async function run() {
         });
 
         // show costing balance only
-        app.get("/costingBalance", async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/costingBalance', async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const result = await costingBalanceCollections.find().toArray();
@@ -901,16 +931,16 @@ async function run() {
         });
 
         // show all transactions list............................................
-        app.get("/allTransactions", verifyToken, async (req, res) => {
+        app.get('/allTransactions', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -921,7 +951,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { note: { $regex: new RegExp(search, "i") } },
+                          { note: { $regex: new RegExp(search, 'i') } },
                           {
                               serial: numericSearch
                                   ? numericSearch
@@ -932,9 +962,9 @@ async function run() {
                                   ? numericSearch
                                   : { $exists: false },
                           },
-                          { date: { $regex: new RegExp(search, "i") } },
-                          { type: { $regex: new RegExp(search, "i") } },
-                          { userName: { $regex: new RegExp(search, "i") } },
+                          { date: { $regex: new RegExp(search, 'i') } },
+                          { type: { $regex: new RegExp(search, 'i') } },
+                          { userName: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -951,16 +981,16 @@ async function run() {
             res.send({ result, count });
         });
         // show all transactions of costing list............................................
-        app.get("/costingTransactions", async (req, res) => {
+        app.get('/costingTransactions', async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -970,11 +1000,11 @@ async function run() {
 
             // Add `type: "Cost"` directly to the query object
             const query = {
-                type: "Cost",
+                type: 'Cost',
                 ...(search
                     ? {
                           $or: [
-                              { note: { $regex: new RegExp(search, "i") } },
+                              { note: { $regex: new RegExp(search, 'i') } },
                               {
                                   serial: numericSearch
                                       ? numericSearch
@@ -985,9 +1015,9 @@ async function run() {
                                       ? numericSearch
                                       : { $exists: false },
                               },
-                              { date: { $regex: new RegExp(search, "i") } },
-                              { type: { $regex: new RegExp(search, "i") } },
-                              { userName: { $regex: new RegExp(search, "i") } },
+                              { date: { $regex: new RegExp(search, 'i') } },
+                              { type: { $regex: new RegExp(search, 'i') } },
+                              { userName: { $regex: new RegExp(search, 'i') } },
                           ],
                       }
                     : {}),
@@ -1006,46 +1036,46 @@ async function run() {
 
                 res.send({ result, count });
             } catch (error) {
-                console.error("Error fetching costing transactions:", error);
+                console.error('Error fetching costing transactions:', error);
                 res.status(500).send(
-                    "An error occurred while fetching costing transactions.",
+                    'An error occurred while fetching costing transactions.',
                 );
             }
         });
 
         // .....................................................................
 
-        app.get("/transactionCount", async (req, res) => {
+        app.get('/transactionCount', async (req, res) => {
             const count = await transactionCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // .....................................................................................
 
-        app.get("/stockCount", async (req, res) => {
+        app.get('/stockCount', async (req, res) => {
             const count = await stockCollections.estimatedDocumentCount();
             res.send({ count });
         });
         // .....................................................................................
-        app.get("/customerCount", async (req, res) => {
+        app.get('/customerCount', async (req, res) => {
             const count = await customerCollections.estimatedDocumentCount();
             res.send({ count });
         });
         // .....................................................................................
-        app.post("/getSalesPrice/:id", async (req, res) => {
+        app.post('/getSalesPrice/:id', async (req, res) => {
             const product = req.params.id;
             const productID = parseInt(product);
             const findProduct = await stockCollections.findOne({ productID });
             if (findProduct) {
                 res.send(findProduct);
             } else {
-                res.json("Stock not available");
+                res.json('Stock not available');
             }
         });
         // .....................................................................................
 
         //set temp sales product list
-        app.post("/adTempSalesProductList", async (req, res) => {
+        app.post('/adTempSalesProductList', async (req, res) => {
             const {
                 productID,
                 productTitle,
@@ -1072,7 +1102,7 @@ async function run() {
             res.send(result);
         });
         //set temp quotation product list
-        app.post("/adTempQuotationProductList", async (req, res) => {
+        app.post('/adTempQuotationProductList', async (req, res) => {
             const {
                 productID,
                 productTitle,
@@ -1100,7 +1130,7 @@ async function run() {
         });
 
         //get temp sales product list..........................................
-        app.get("/tempSalesProductList/:userEmail", async (req, res) => {
+        app.get('/tempSalesProductList/:userEmail', async (req, res) => {
             const userEmail = req.params.userEmail;
             const findByMail = await tempSalesProductCollections
                 .find({ userMail: userEmail })
@@ -1112,7 +1142,7 @@ async function run() {
         });
 
         //get temp quotation product list..........................................
-        app.get("/tempQuotationProductList/:userEmail", async (req, res) => {
+        app.get('/tempQuotationProductList/:userEmail', async (req, res) => {
             const userEmail = req.params.userEmail;
             const result = await tempQuotationProductCollections
                 .find({ userMail: userEmail })
@@ -1122,7 +1152,7 @@ async function run() {
         // .....................................................................................
 
         //set temp purchase product list
-        app.post("/adTempPurchaseProductList", async (req, res) => {
+        app.post('/adTempPurchaseProductList', async (req, res) => {
             const {
                 productID,
                 productTitle,
@@ -1163,7 +1193,7 @@ async function run() {
         });
 
         //get temp purchase product list..........................................
-        app.get("/tempPurchaseProductList/:userEmail", async (req, res) => {
+        app.get('/tempPurchaseProductList/:userEmail', async (req, res) => {
             const userEmail = req.params.userEmail;
             const result = await tempPurchaseProductCollections
                 .find({ userMail: userEmail })
@@ -1173,7 +1203,7 @@ async function run() {
         });
 
         // delete temp product from purchase
-        app.delete("/deleteTempProduct/:id", async (req, res) => {
+        app.delete('/deleteTempProduct/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result =
@@ -1182,7 +1212,7 @@ async function run() {
         });
 
         // delete temp product from sales
-        app.delete("/deleteSalesTempProduct/:id", async (req, res) => {
+        app.delete('/deleteSalesTempProduct/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await tempSalesProductCollections.deleteOne(query);
@@ -1190,7 +1220,7 @@ async function run() {
         });
 
         // delete temp product from sales
-        app.delete("/deleteQuotationTempProduct/:id", async (req, res) => {
+        app.delete('/deleteQuotationTempProduct/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result =
@@ -1199,7 +1229,7 @@ async function run() {
         });
 
         // ..........................................................................................
-        app.post("/getCustomer/:contact", async (req, res) => {
+        app.post('/getCustomer/:contact', async (req, res) => {
             const mobileNumber = req.params.contact;
 
             const customer = await customerCollections.findOne({
@@ -1217,7 +1247,7 @@ async function run() {
         });
 
         // ..........................................................................................
-        app.post("/getSupplier/:contact", async (req, res) => {
+        app.post('/getSupplier/:contact', async (req, res) => {
             const mobileNumber = req.params.contact;
             const result = await supplierCollections.findOne({
                 contactNumber: mobileNumber,
@@ -1227,9 +1257,9 @@ async function run() {
 
         // ---------------------------Summary start-----------------------------------------------------------------
 
-        app.get("/getSummary", async (req, res) => {
+        app.get('/getSummary', async (req, res) => {
             try {
-                const todaysDate = moment(new Date()).format("DD.MM.YYYY");
+                const todaysDate = moment(new Date()).format('DD.MM.YYYY');
 
                 // Fetch sales invoices for today's date
                 const salesInvoices = await salesInvoiceCollections
@@ -1256,7 +1286,7 @@ async function run() {
                                   .filter(
                                       (payment) =>
                                           payment.date === todaysDate &&
-                                          payment.paymentMethod != "Return",
+                                          payment.paymentMethod != 'Return',
                                   )
                                   .reduce(
                                       (sum, payment) =>
@@ -1300,7 +1330,7 @@ async function run() {
                                   .filter(
                                       (payment) =>
                                           payment.date === todaysDate &&
-                                          payment.paymentMethod != "Return",
+                                          payment.paymentMethod != 'Return',
                                   )
                                   .reduce(
                                       (sum, payment) =>
@@ -1321,7 +1351,7 @@ async function run() {
 
                 const transactions = await transactionCollections
                     .find({
-                        $and: [{ date: todaysDate }, { type: "Cost" }],
+                        $and: [{ date: todaysDate }, { type: 'Cost' }],
                     })
                     .toArray();
 
@@ -1337,9 +1367,9 @@ async function run() {
                     expenseSummary,
                 });
             } catch (error) {
-                console.error("Error fetching sales summary:", error);
+                console.error('Error fetching sales summary:', error);
                 res.status(500).send({
-                    message: "Server error while fetching summary",
+                    message: 'Server error while fetching summary',
                 });
             }
         });
@@ -1347,7 +1377,7 @@ async function run() {
         // ---------------------------Summary end---------------------------------------------------------------------
 
         // new sales invoice...........................................
-        app.post("/newSalesInvoice", async (req, res) => {
+        app.post('/newSalesInvoice', async (req, res) => {
             const {
                 date,
                 customerName,
@@ -1433,7 +1463,7 @@ async function run() {
             if (unavailableProducts.length > 0) {
                 return res.json(
                     `Stock not available for the following products: ${unavailableProducts.join(
-                        ", ",
+                        ', ',
                     )}`,
                 );
             }
@@ -1621,7 +1651,7 @@ async function run() {
                             statements: {
                                 date,
                                 amount: `- ${customerBalance}`,
-                                paymentMethod: "Sales",
+                                paymentMethod: 'Sales',
                                 note: nextInvoiceNumber,
                                 userName,
                             },
@@ -1642,7 +1672,7 @@ async function run() {
                                         drBalance: customerBalance,
                                         crBalance: 0,
                                         balance: 0,
-                                        type: "Purchase by A/C",
+                                        type: 'Purchase by A/C',
                                         userName,
                                     },
                                     {
@@ -1654,7 +1684,7 @@ async function run() {
                                         ),
                                         crBalance: 0,
                                         balance: 0,
-                                        type: "Purchase on cash",
+                                        type: 'Purchase on cash',
                                         userName,
                                     },
                                 ],
@@ -1698,7 +1728,7 @@ async function run() {
                     rcvAmount: customerBalance,
                     note: nextInvoiceNumber,
                     date,
-                    type: "OUT",
+                    type: 'OUT',
                     userName,
                 });
             } else if (sourceOfPaid && customerBalance >= finalPayAmount) {
@@ -1721,7 +1751,7 @@ async function run() {
                             statements: {
                                 date,
                                 amount: `- ${finalPayAmount}`,
-                                paymentMethod: "Sales",
+                                paymentMethod: 'Sales',
                                 note: nextInvoiceNumber,
                                 userName,
                             },
@@ -1740,7 +1770,7 @@ async function run() {
                                 drBalance: finalPayAmount,
                                 crBalance: 0,
                                 balance: customerBalance - finalPayAmount,
-                                type: "Purchase by A/C",
+                                type: 'Purchase by A/C',
                                 userName,
                             },
                         },
@@ -1772,7 +1802,7 @@ async function run() {
                     rcvAmount: finalPayAmount,
                     note: nextInvoiceNumber,
                     date,
-                    type: "OUT",
+                    type: 'OUT',
                     userName,
                 });
             } else {
@@ -1796,7 +1826,7 @@ async function run() {
                                 drBalance: finalPayAmount,
                                 crBalance: 0,
                                 balance: customerBalance,
-                                type: "Purchase on cash",
+                                type: 'Purchase on cash',
                                 userName,
                             },
                         },
@@ -1824,7 +1854,7 @@ async function run() {
                 totalBalance: finalPayAmount,
                 note: `Sales ref, ${nextInvoiceNumber}`,
                 date,
-                type: "Sales",
+                type: 'Sales',
                 userName,
             });
 
@@ -1837,7 +1867,7 @@ async function run() {
 
         // ................................
 
-        app.post("/newQuotation", async (req, res) => {
+        app.post('/newQuotation', async (req, res) => {
             const {
                 userName,
                 customerSerial,
@@ -1902,16 +1932,16 @@ async function run() {
         });
 
         // get sales invoice list
-        app.get("/salesInvoices", verifyToken, async (req, res) => {
+        app.get('/salesInvoices', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -1922,7 +1952,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { date: { $regex: new RegExp(search, "i") } },
+                          { date: { $regex: new RegExp(search, 'i') } },
                           {
                               grandTotal: numericSearch
                                   ? numericSearch
@@ -1933,8 +1963,8 @@ async function run() {
                                   ? numericSearch
                                   : { $exists: false },
                           },
-                          { customerName: { $regex: new RegExp(search, "i") } },
-                          { userName: { $regex: new RegExp(search, "i") } },
+                          { customerName: { $regex: new RegExp(search, 'i') } },
+                          { userName: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -1950,16 +1980,16 @@ async function run() {
         });
 
         // get quotation list
-        app.get("/quotationInvoice", verifyToken, async (req, res) => {
+        app.get('/quotationInvoice', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -1970,19 +2000,19 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { date: { $regex: new RegExp(search, "i") } },
+                          { date: { $regex: new RegExp(search, 'i') } },
                           {
                               grandTotal: numericSearch
                                   ? numericSearch
                                   : { $exists: false },
                           },
-                          { customerName: { $regex: new RegExp(search, "i") } },
+                          { customerName: { $regex: new RegExp(search, 'i') } },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
-                          { userName: { $regex: new RegExp(search, "i") } },
+                          { userName: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -1998,16 +2028,16 @@ async function run() {
         });
 
         // show customer Ledger start .............................................
-        app.get("/customerLedger", verifyToken, async (req, res) => {
+        app.get('/customerLedger', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -2018,7 +2048,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { customerName: { $regex: new RegExp(search, "i") } },
+                          { customerName: { $regex: new RegExp(search, 'i') } },
                           {
                               dueAmount: numericSearch
                                   ? numericSearch
@@ -2031,12 +2061,12 @@ async function run() {
                           },
                           {
                               customerAddress: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                       ],
@@ -2055,12 +2085,12 @@ async function run() {
         // show customer Ledger end .............................................
 
         // Get all customer due list for excel download
-        app.get("/allCustomer", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/allCustomer', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await customerDueCollections
                 .find()
@@ -2070,12 +2100,12 @@ async function run() {
         });
         // ********************************************************************************
         // Get all supplier due list for excel download
-        app.get("/allSupplier", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/allSupplier', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await supplierDueCollections
                 .find()
@@ -2085,7 +2115,7 @@ async function run() {
         });
 
         // new purchase invoice...........................................
-        app.post("/newPurchaseInvoice", async (req, res) => {
+        app.post('/newPurchaseInvoice', async (req, res) => {
             const {
                 userName,
                 date,
@@ -2162,7 +2192,7 @@ async function run() {
                     },
                 );
             } else {
-                return res.json("Insufficient balance");
+                return res.json('Insufficient balance');
             }
 
             const result = await purchaseInvoiceCollections.insertOne({
@@ -2289,7 +2319,7 @@ async function run() {
                 totalBalance: finalPayAmount,
                 note: `Purchase ref, ${nextInvoiceNumber}`,
                 date,
-                type: "Purchase",
+                type: 'Purchase',
                 userName,
             });
 
@@ -2299,16 +2329,16 @@ async function run() {
         });
 
         // show supplier Ledger start .............................................
-        app.get("/supplierLedger", verifyToken, async (req, res) => {
+        app.get('/supplierLedger', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -2319,7 +2349,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { supplierName: { $regex: new RegExp(search, "i") } },
+                          { supplierName: { $regex: new RegExp(search, 'i') } },
                           {
                               supplierSerial: numericSearch
                                   ? numericSearch
@@ -2332,17 +2362,17 @@ async function run() {
                           },
                           {
                               supplierAddress: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               contactPerson: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                       ],
@@ -2375,15 +2405,15 @@ async function run() {
         // original single supplier ledger end ...............................................
 
         // GPT start single supplier
-        app.get("/singleSupplier/:id", verifyToken, async (req, res) => {
+        app.get('/singleSupplier/:id', verifyToken, async (req, res) => {
             const id = parseInt(req.params.id);
             const { searchTerm, page = 1, limit = 10 } = req.query; // Get search term, page, and limit from query parameters
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const supplier = await supplierDueCollections.findOne({
@@ -2391,7 +2421,7 @@ async function run() {
             });
 
             if (!supplier) {
-                return res.status(404).send({ message: "Supplier not found" });
+                return res.status(404).send({ message: 'Supplier not found' });
             }
 
             let purchaseHistory = supplier.purchaseHistory || [];
@@ -2435,15 +2465,15 @@ async function run() {
         });
         // GPT end single supplier
         // GPT start single customer
-        app.get("/singleCustomer/:id", verifyToken, async (req, res) => {
+        app.get('/singleCustomer/:id', verifyToken, async (req, res) => {
             const id = parseInt(req.params.id);
             const { searchTerm, page = 1, limit = 10 } = req.query; // Get search term, page, and limit from query parameters
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const customer = await customerDueCollections.findOne({
@@ -2451,7 +2481,7 @@ async function run() {
             });
 
             if (!customer) {
-                return res.status(404).send({ message: "Customer not found" });
+                return res.status(404).send({ message: 'Customer not found' });
             }
 
             let salesHistory = customer.salesHistory || [];
@@ -2488,18 +2518,18 @@ async function run() {
         });
 
         // get statement for download range base /downloadStatement****************************************************************
-        app.get("/downloadStatement/:id", verifyToken, async (req, res) => {
+        app.get('/downloadStatement/:id', verifyToken, async (req, res) => {
             try {
                 const id = parseInt(req.params.id);
                 const startDate = parseCustomDate(req.query.beginningDate); // Parse start date
                 const endDate = parseCustomDate(req.query.endingDate); // Parse end date
-                const userMail = req.query["userEmail"];
-                const email = req.user["email"];
+                const userMail = req.query['userEmail'];
+                const email = req.user['email'];
 
                 if (userMail !== email) {
                     return res
                         .status(401)
-                        .send({ message: "Forbidden Access" });
+                        .send({ message: 'Forbidden Access' });
                 }
 
                 // Find the customer document
@@ -2510,7 +2540,7 @@ async function run() {
                 if (!customer) {
                     return res
                         .status(404)
-                        .send({ message: "Customer not found" });
+                        .send({ message: 'Customer not found' });
                 }
 
                 // Filter the statement array based on date range
@@ -2522,41 +2552,41 @@ async function run() {
                 res.status(200).send(filteredStatement); // Send the filtered array
             } catch (error) {
                 console.error(error);
-                res.status(500).send({ message: "Internal Server Error" });
+                res.status(500).send({ message: 'Internal Server Error' });
             }
         });
 
         // Helper function to parse custom date format (dd.MM.yyyy)
         function parseCustomDate(dateString) {
-            const [day, month, year] = dateString.split(".").map(Number);
+            const [day, month, year] = dateString.split('.').map(Number);
             return new Date(Date.UTC(year, month - 1, day)); // Ensures UTC midnight
         }
 
         // get statement ****************************************************************
 
         app.get(
-            "/singleCustomer/statement/:id",
+            '/singleCustomer/statement/:id',
             verifyToken,
             async (req, res) => {
                 try {
                     const id = parseInt(req.params.id);
                     const page = parseInt(req.query.page) || 1;
                     const size = parseInt(req.query.size) || 20;
-                    const search = req.query.search || "";
+                    const search = req.query.search || '';
 
-                    const userMail = req.query["userEmail"];
-                    const email = req.user["email"];
+                    const userMail = req.query['userEmail'];
+                    const email = req.user['email'];
 
                     if (userMail !== email) {
                         return res
                             .status(401)
-                            .send({ message: "Forbidden Access" });
+                            .send({ message: 'Forbidden Access' });
                     }
 
                     if (isNaN(id)) {
                         return res
                             .status(400)
-                            .send({ message: "Invalid customer ID" });
+                            .send({ message: 'Invalid customer ID' });
                     }
 
                     // Find the customer document
@@ -2567,7 +2597,7 @@ async function run() {
                     if (!customer) {
                         return res
                             .status(404)
-                            .send({ message: "Customer not found" });
+                            .send({ message: 'Customer not found' });
                     }
 
                     // Filter the `statement` array based on the search condition
@@ -2577,7 +2607,7 @@ async function run() {
                             (entry) =>
                                 Object.values(entry).some(
                                     (value) =>
-                                        typeof value === "string" &&
+                                        typeof value === 'string' &&
                                         value
                                             .toLowerCase()
                                             .includes(search.toLowerCase()),
@@ -2602,7 +2632,7 @@ async function run() {
                     });
                 } catch (error) {
                     console.error(error);
-                    res.status(500).send({ message: "Internal Server Error" });
+                    res.status(500).send({ message: 'Internal Server Error' });
                 }
             },
         );
@@ -2623,7 +2653,7 @@ async function run() {
         // single customer ledger end ...............................................
 
         // supplier payment start .................................................
-        app.post("/paySupplier/:id", async (req, res) => {
+        app.post('/paySupplier/:id', async (req, res) => {
             const id = parseInt(req.params.id);
             const { date, paidAmount, paymentMethod, payNote, userName } =
                 req.body;
@@ -2635,7 +2665,7 @@ async function run() {
                     { $inc: { mainBalance: -paidAmount } },
                 );
             } else {
-                return res.json("Insufficient balance");
+                return res.json('Insufficient balance');
             }
 
             const supplierDue = await supplierDueBalanceCollections.findOne({});
@@ -2673,7 +2703,7 @@ async function run() {
                 totalBalance: paidAmount,
                 note: `Paid to ${findSupplier.supplierName}`,
                 date,
-                type: "Paid",
+                type: 'Paid',
                 userName,
             });
 
@@ -2703,12 +2733,12 @@ async function run() {
                 // if(duaPaid.dueAmount <= 0){
                 //   await supplierDueCollections.deleteOne({dueAmount: 0});
                 // }
-                res.json("success");
+                res.json('success');
             }
         });
         // supplier payment end .................................................
         // add customer balance
-        app.post("/receiveCustomerBalance/:id", async (req, res) => {
+        app.post('/receiveCustomerBalance/:id', async (req, res) => {
             const id = parseInt(req.params.id);
             const {
                 date,
@@ -2745,7 +2775,7 @@ async function run() {
                 } else {
                     return res
                         .status(404)
-                        .json({ message: "Customer not found" });
+                        .json({ message: 'Customer not found' });
                 }
 
                 // Update main balance
@@ -2758,7 +2788,7 @@ async function run() {
                 } else {
                     return res
                         .status(500)
-                        .json({ message: "Main balance record not found" });
+                        .json({ message: 'Main balance record not found' });
                 }
 
                 // Add transaction to transactionCollections
@@ -2767,7 +2797,7 @@ async function run() {
                 });
                 if (!findCustomer) {
                     return res.status(404).json({
-                        message: "Customer not found in customer due list",
+                        message: 'Customer not found in customer due list',
                     });
                 }
 
@@ -2790,23 +2820,23 @@ async function run() {
                     totalBalance: receiveConfirmAmount,
                     note: `Received from ${findCustomer.customerName}`,
                     date,
-                    type: "Credit",
+                    type: 'Credit',
                     userName,
                 });
 
                 // Send success response after all operations complete successfully
-                res.status(200).json("success");
+                res.status(200).json('success');
             } catch (error) {
-                console.error("Error receiving customer balance:", error);
+                console.error('Error receiving customer balance:', error);
                 res.status(500).json({
-                    message: "Failed to receive customer balance",
+                    message: 'Failed to receive customer balance',
                     error,
                 });
             }
         });
 
         // customer payment start .................................................
-        app.post("/payCustomer/:id", async (req, res) => {
+        app.post('/payCustomer/:id', async (req, res) => {
             const id = parseInt(req.params.id);
             const {
                 date,
@@ -2832,13 +2862,13 @@ async function run() {
                     const phone = customer.contactNumber;
                     const formattedNumber = formatPhoneNumber(phone);
                     const message = `প্রিয় গ্রাহক, আপনি ৳${paidAmount.toLocaleString(
-                        "en-BD",
+                        'en-BD',
                         {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                         },
                     )} পরিশোধ করেছেন। আপনার বর্তমান বকেয়া ৳${updatedDueAmount.toLocaleString(
-                        "en-BD",
+                        'en-BD',
                         {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -2851,7 +2881,7 @@ async function run() {
                             $set: {
                                 dueAmount: updatedDueAmount,
                                 scheduleDate,
-                                status: "Present",
+                                status: 'Present',
                             },
                             $inc: {
                                 halkhata: paidAmount, // Add to existing halkhata
@@ -2880,8 +2910,8 @@ async function run() {
                                 statements: {
                                     date,
                                     amount: `- ${paidAmount}`,
-                                    paymentMethod: "-",
-                                    note: "Due paid",
+                                    paymentMethod: '-',
+                                    note: 'Due paid',
                                     userName,
                                 },
                             },
@@ -2915,7 +2945,7 @@ async function run() {
                                     drBalance: paidAmount - discount,
                                     crBalance: 0,
                                     balance: cBalance?.crBalance,
-                                    type: "Due paid by A/C",
+                                    type: 'Due paid by A/C',
                                     userName,
                                 },
                             },
@@ -2943,9 +2973,9 @@ async function run() {
                         serial: nextDebtSerial,
                         receiver: customer?.customerName,
                         rcvAmount: paidAmount - discount,
-                        note: "Due paid",
+                        note: 'Due paid',
                         date,
-                        type: "OUT",
+                        type: 'OUT',
                         userName,
                     });
                 } else {
@@ -2975,7 +3005,7 @@ async function run() {
                                     drBalance: paidAmount - discount,
                                     crBalance: 0,
                                     balance: cBalance?.crBalance,
-                                    type: "Due paid by cash",
+                                    type: 'Due paid by cash',
                                     userName,
                                 },
                             },
@@ -3004,7 +3034,7 @@ async function run() {
                 });
                 if (!findCustomer) {
                     return res.status(404).json({
-                        message: "Customer not found in customerCollections",
+                        message: 'Customer not found in customerCollections',
                     });
                 }
 
@@ -3027,16 +3057,16 @@ async function run() {
                     totalBalance: paidAmount - discount,
                     note: `Received from ${findCustomer.customerName}`,
                     date,
-                    type: "Received",
+                    type: 'Received',
                     userName,
                 });
 
                 // Send success response after all operations are completed
-                res.status(200).json("success");
+                res.status(200).json('success');
             } catch (error) {
-                console.error("Error processing payment:", error);
+                console.error('Error processing payment:', error);
                 res.status(500).json({
-                    message: "Failed to process payment",
+                    message: 'Failed to process payment',
                     error,
                 });
             }
@@ -3045,16 +3075,16 @@ async function run() {
         // customer payment end .................................................
 
         // get invoice list
-        app.get("/invoices", verifyToken, async (req, res) => {
+        app.get('/invoices', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -3065,7 +3095,7 @@ async function run() {
             const query = search
                 ? {
                       $or: [
-                          { date: { $regex: new RegExp(search, "i") } },
+                          { date: { $regex: new RegExp(search, 'i') } },
                           {
                               invoiceNumber: numericSearch
                                   ? numericSearch
@@ -3076,8 +3106,8 @@ async function run() {
                                   ? numericSearch
                                   : { $exists: false },
                           },
-                          { supplierName: { $regex: new RegExp(search, "i") } },
-                          { userName: { $regex: new RegExp(search, "i") } },
+                          { supplierName: { $regex: new RegExp(search, 'i') } },
+                          { userName: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -3094,16 +3124,16 @@ async function run() {
         });
 
         // Get current stock balance
-        app.get("/stockBalance", verifyToken, async (req, res) => {
+        app.get('/stockBalance', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const stockValue = await stockCollections.find().toArray();
@@ -3132,7 +3162,7 @@ async function run() {
                                     {
                                         productTitle: {
                                             $regex: `\\b${search}\\b`,
-                                            $options: "i",
+                                            $options: 'i',
                                         },
                                     },
                                 ]
@@ -3159,7 +3189,7 @@ async function run() {
                     {
                         $group: {
                             _id: null,
-                            totalStock: { $sum: "$purchaseQuantity" },
+                            totalStock: { $sum: '$purchaseQuantity' },
                         },
                     },
                 ])
@@ -3175,7 +3205,7 @@ async function run() {
         });
 
         // update stock
-        app.put("/updateStock/:id", async (req, res) => {
+        app.put('/updateStock/:id', async (req, res) => {
             const { id } = req.params;
             const { purchaseQuantity, purchasePrice } = req.body;
 
@@ -3184,7 +3214,7 @@ async function run() {
                 if (!ObjectId.isValid(id)) {
                     return res
                         .status(400)
-                        .json({ message: "Invalid ID format" });
+                        .json({ message: 'Invalid ID format' });
                 }
 
                 // Update the stock item with the given ID
@@ -3196,27 +3226,27 @@ async function run() {
                             purchasePrice,
                         },
                     },
-                    { new: true, returnDocument: "after" }, // Return the updated document in the response
+                    { new: true, returnDocument: 'after' }, // Return the updated document in the response
                 );
 
                 if (!updatedStock) {
                     return res
                         .status(404)
-                        .json({ message: "Stock item not found" });
+                        .json({ message: 'Stock item not found' });
                 }
 
                 res.status(200).json({
-                    message: "Stock updated successfully",
+                    message: 'Stock updated successfully',
                     updatedStock,
                 });
             } catch (error) {
-                console.error("Error updating stock:", error);
-                res.status(500).json({ message: "Failed to update stock" });
+                console.error('Error updating stock:', error);
+                res.status(500).json({ message: 'Failed to update stock' });
             }
         });
 
         // add customer.....................................
-        app.post("/addCustomer", async (req, res) => {
+        app.post('/addCustomer', async (req, res) => {
             const customerInfo = req.body;
             const { contactNumber } = customerInfo;
             const isCustomerExist = await customerCollections.findOne({
@@ -3237,7 +3267,7 @@ async function run() {
             const newCustomerInfo = { ...customerInfo, serial: nextSerial };
 
             if (isCustomerExist) {
-                res.json("Customer already exists with the mobile number");
+                res.json('Customer already exists with the mobile number');
             } else {
                 const result =
                     await customerCollections.insertOne(newCustomerInfo);
@@ -3246,10 +3276,10 @@ async function run() {
         });
 
         // show customer...................................
-        app.get("/customers", async (req, res) => {
+        app.get('/customers', async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
             let numericSearch = parseFloat(search);
             if (isNaN(numericSearch)) {
                 numericSearch = null;
@@ -3259,7 +3289,7 @@ async function run() {
                 ? {
                       $or: [
                           {
-                              customerName: { $regex: new RegExp(search, "i") },
+                              customerName: { $regex: new RegExp(search, 'i') },
                           },
                           {
                               serial: numericSearch
@@ -3268,12 +3298,12 @@ async function run() {
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                           {
                               customerAddress: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
                       ],
@@ -3292,7 +3322,7 @@ async function run() {
         });
 
         // update customer
-        app.put("/updateCustomer/:id", async (req, res) => {
+        app.put('/updateCustomer/:id', async (req, res) => {
             const id = req.params.id;
             const filter = { _id: new ObjectId(id) };
             const { customerName, contactNumber, customerAddress } = req.body;
@@ -3322,7 +3352,7 @@ async function run() {
                 },
             };
             if (isCustomerExist) {
-                res.json("Customer already exists with the mobile number");
+                res.json('Customer already exists with the mobile number');
             } else {
                 const result = await customerCollections.updateOne(
                     filter,
@@ -3338,7 +3368,7 @@ async function run() {
         });
 
         // delete customer
-        app.delete("/deleteCustomer/:id", async (req, res) => {
+        app.delete('/deleteCustomer/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await customerCollections.deleteOne(query);
@@ -3346,62 +3376,62 @@ async function run() {
         });
 
         // get profit balance
-        app.get("/profitBalance", verifyToken, async (req, res) => {
+        app.get('/profitBalance', verifyToken, async (req, res) => {
             const result = await profitCollections.find().toArray();
             res.send(result);
         });
 
         // get supplier due balance
 
-        app.get("/supplierTotalDueBalance", verifyToken, async (req, res) => {
+        app.get('/supplierTotalDueBalance', verifyToken, async (req, res) => {
             const result = await supplierDueBalanceCollections.find().toArray();
             res.send(result);
         });
 
-        app.get("/customerTotalDueBalance", verifyToken, async (req, res) => {
+        app.get('/customerTotalDueBalance', verifyToken, async (req, res) => {
             const result = await customerDueBalanceCollections.find().toArray();
             res.send(result);
         });
 
         // .....................................................................................
-        app.get("/productTotalCount", async (req, res) => {
+        app.get('/productTotalCount', async (req, res) => {
             const count = await productCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // .....................................................................................
-        app.get("/supplierTotalCount", async (req, res) => {
+        app.get('/supplierTotalCount', async (req, res) => {
             const count = await supplierCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // single supplier total count
-        app.get("/singleSupplierCount", async (req, res) => {
+        app.get('/singleSupplierCount', async (req, res) => {
             const count = await supplierDueCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // single customer total count
-        app.get("/singleCustomerCount", async (req, res) => {
+        app.get('/singleCustomerCount', async (req, res) => {
             const count = await customerDueCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // Total sales invoice count
-        app.get("/salesInvoiceCount", async (req, res) => {
+        app.get('/salesInvoiceCount', async (req, res) => {
             const count =
                 await salesInvoiceCollections.estimatedDocumentCount();
             res.send({ count });
         });
         // Total sales invoice history count
-        app.get("/salesHistoryCount", async (req, res) => {
+        app.get('/salesHistoryCount', async (req, res) => {
             const count =
                 await salesInvoiceCollections.estimatedDocumentCount();
             res.send({ count });
         });
 
         // Total sales invoice count
-        app.get("/purchaseInvoiceCount", async (req, res) => {
+        app.get('/purchaseInvoiceCount', async (req, res) => {
             const count =
                 await purchaseInvoiceCollections.estimatedDocumentCount();
             res.send({ count });
@@ -3409,14 +3439,14 @@ async function run() {
 
         // generate sales invoice
 
-        app.get("/generateSalesInvoice", verifyToken, async (req, res) => {
+        app.get('/generateSalesInvoice', verifyToken, async (req, res) => {
             const finder = parseInt(req.query.invoiceNumber);
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const result = await salesInvoiceCollections.findOne({
@@ -3428,7 +3458,7 @@ async function run() {
 
         // generate purchase invoice
 
-        app.get("/generatePurchaseInvoice", verifyToken, async (req, res) => {
+        app.get('/generatePurchaseInvoice', verifyToken, async (req, res) => {
             const finder = parseInt(req.query.invoiceNumber);
             const result = await purchaseInvoiceCollections.findOne({
                 invoiceNumber: finder,
@@ -3438,7 +3468,7 @@ async function run() {
         });
 
         // Generate quotation invoice
-        app.get("/generateQuotationInvoice", verifyToken, async (req, res) => {
+        app.get('/generateQuotationInvoice', verifyToken, async (req, res) => {
             const finder = req.query.ID;
             const result = await quotationCollections.findOne({
                 _id: new ObjectId(finder),
@@ -3448,14 +3478,14 @@ async function run() {
         });
 
         // Return customer.................................................................................................
-        app.get("/returnCustomerInvoice/:invoiceNumber", async (req, res) => {
+        app.get('/returnCustomerInvoice/:invoiceNumber', async (req, res) => {
             try {
                 const invoiceNumber = parseInt(req.params.invoiceNumber);
                 const result = await salesInvoiceCollections.findOne({
                     invoiceNumber,
                 });
                 if (!result) {
-                    return res.json({ message: "Invoice not found" });
+                    return res.json({ message: 'Invoice not found' });
                 }
 
                 // if (result.customized) {
@@ -3495,11 +3525,11 @@ async function run() {
                 if (result) {
                     res.send(result);
                 } else {
-                    res.status(404).send({ message: "Invoice not found" });
+                    res.status(404).send({ message: 'Invoice not found' });
                 }
             } catch (error) {
                 res.status(500).send({
-                    message: "An error occurred while retrieving the invoice.",
+                    message: 'An error occurred while retrieving the invoice.',
                     error: error.message,
                 });
             }
@@ -3507,7 +3537,7 @@ async function run() {
 
         // ----------------------------------------------------------------------
 
-        app.put("/updateCustomerInvoice/:invoiceNumber", async (req, res) => {
+        app.put('/updateCustomerInvoice/:invoiceNumber', async (req, res) => {
             const invoiceNumber = parseInt(req.params.invoiceNumber);
             const updatedInvoice = req.body;
             const date = req.query.date;
@@ -3546,7 +3576,7 @@ async function run() {
                         if (mainBalanceRecord.mainBalance < remainingRefund) {
                             return res
                                 .status(400)
-                                .send({ message: "Insufficient balance" });
+                                .send({ message: 'Insufficient balance' });
                         }
                     }
                 }
@@ -3561,7 +3591,7 @@ async function run() {
                                 paymentHistory: {
                                     date,
                                     paidAmount: oldInvoiceDue,
-                                    paymentMethod: "Return",
+                                    paymentMethod: 'Return',
                                     payNote: invoiceNumber,
                                     userName: updatedInvoice.userName,
                                 },
@@ -3596,7 +3626,7 @@ async function run() {
                                     paymentHistory: {
                                         date,
                                         paidAmount: Math.abs(newDueAmount), // Correct data type for consistency
-                                        paymentMethod: "Return",
+                                        paymentMethod: 'Return',
                                         payNote: invoiceNumber,
                                         userName: updatedInvoice.userName,
                                     },
@@ -3633,7 +3663,7 @@ async function run() {
                                             date,
                                             paidAmount:
                                                 afterDeductingOldDue.dueAmount, // Correct data type for consistency
-                                            paymentMethod: "Return",
+                                            paymentMethod: 'Return',
                                             payNote: invoiceNumber,
                                             userName: updatedInvoice.userName,
                                         },
@@ -3679,7 +3709,7 @@ async function run() {
                             totalBalance: remainingRefund,
                             note: `Return from ${invoiceNumber}`,
                             date,
-                            type: "Return",
+                            type: 'Return',
                             userName: updatedInvoice.userName,
                         });
                     }
@@ -3693,7 +3723,7 @@ async function run() {
                                 paymentHistory: {
                                     date,
                                     paidAmount: restDueAmount, // Correct data type for consistency
-                                    paymentMethod: "Return",
+                                    paymentMethod: 'Return',
                                     payNote: invoiceNumber,
                                     userName: updatedInvoice.userName,
                                 },
@@ -3762,19 +3792,19 @@ async function run() {
                 res.send(result);
             } catch (error) {
                 console.error(error);
-                res.status(500).send({ message: "Internal Server Error" });
+                res.status(500).send({ message: 'Internal Server Error' });
             }
         });
 
         // Return supplier...................................................................................................
-        app.get("/returnSupplierInvoice/:invoiceNumber", async (req, res) => {
+        app.get('/returnSupplierInvoice/:invoiceNumber', async (req, res) => {
             try {
                 const invoiceNumber = parseInt(req.params.invoiceNumber);
                 const result = await purchaseInvoiceCollections.findOne({
                     invoiceNumber,
                 });
                 if (!result) {
-                    return res.json({ message: "Invoice not found" });
+                    return res.json({ message: 'Invoice not found' });
                 }
 
                 // if (result.modified === "yes") {
@@ -3813,18 +3843,18 @@ async function run() {
                 if (result) {
                     res.send(result);
                 } else {
-                    res.status(404).send({ message: "Invoice not found" });
+                    res.status(404).send({ message: 'Invoice not found' });
                 }
             } catch (error) {
                 res.status(500).send({
-                    message: "An error occurred while retrieving the invoice.",
+                    message: 'An error occurred while retrieving the invoice.',
                     error: error.message,
                 });
             }
         });
 
         // .................................................................................................................
-        app.put("/updateSupplierInvoice/:invoiceNumber", async (req, res) => {
+        app.put('/updateSupplierInvoice/:invoiceNumber', async (req, res) => {
             const invoiceNumber = parseInt(req.params.invoiceNumber);
             const updatedInvoice = req.body;
             const date = req.query.date;
@@ -3837,7 +3867,7 @@ async function run() {
                 if (!oldInvoice) {
                     return res
                         .status(404)
-                        .send({ message: "Invoice not found" });
+                        .send({ message: 'Invoice not found' });
                 }
 
                 // Check stock availability before any adjustments
@@ -3904,7 +3934,7 @@ async function run() {
                                 paymentHistory: {
                                     date,
                                     paidAmount: oldInvoiceDue,
-                                    paymentMethod: "Return",
+                                    paymentMethod: 'Return',
                                     payNote: invoiceNumber,
                                     userName: updatedInvoice.userName,
                                 },
@@ -3937,7 +3967,7 @@ async function run() {
                                     paymentHistory: {
                                         date,
                                         paidAmount: Math.abs(newDueAmount), // Correct data type for consistency
-                                        paymentMethod: "Return",
+                                        paymentMethod: 'Return',
                                         payNote: invoiceNumber,
                                         userName: updatedInvoice.userName,
                                     },
@@ -3972,7 +4002,7 @@ async function run() {
                                             date,
                                             paidAmount:
                                                 afterDeductingOldDue.dueAmount, // Correct data type for consistency
-                                            paymentMethod: "Return",
+                                            paymentMethod: 'Return',
                                             payNote: invoiceNumber,
                                             userName: updatedInvoice.userName,
                                         },
@@ -4021,7 +4051,7 @@ async function run() {
                             totalBalance: remainingRefund,
                             note: `Return from ${invoiceNumber}`,
                             date,
-                            type: "Return",
+                            type: 'Return',
                             userName: updatedInvoice.userName,
                         });
                     }
@@ -4035,7 +4065,7 @@ async function run() {
                                 paymentHistory: {
                                     date,
                                     paidAmount: restDueAmount, // Correct data type for consistency
-                                    paymentMethod: "Return",
+                                    paymentMethod: 'Return',
                                     payNote: invoiceNumber,
                                     userName: updatedInvoice.userName,
                                 },
@@ -4099,13 +4129,13 @@ async function run() {
                 res.send(result);
             } catch (error) {
                 console.error(error);
-                res.status(500).send({ message: "Internal Server Error" });
+                res.status(500).send({ message: 'Internal Server Error' });
             }
         });
 
         // Debt system start here......................................................................
         // borrowerCollections
-        app.post("/debt/borrowerList", async (req, res) => {
+        app.post('/debt/borrowerList', async (req, res) => {
             const borrowerInfo = req.body;
             const { contactNumber } = borrowerInfo;
             const isBorrowerExist = await borrowerCollections.findOne({
@@ -4132,7 +4162,7 @@ async function run() {
             };
 
             if (isBorrowerExist) {
-                res.json("Mobile number already exists");
+                res.json('Mobile number already exists');
             } else {
                 const result =
                     await borrowerCollections.insertOne(newBorrowerInfo);
@@ -4143,7 +4173,7 @@ async function run() {
         // ----------------------------------------------------------------
 
         // borrowerCollections
-        app.post("/debt/receivedMoney", async (req, res) => {
+        app.post('/debt/receivedMoney', async (req, res) => {
             try {
                 const {
                     date,
@@ -4162,7 +4192,7 @@ async function run() {
                 if (!borrower) {
                     return res
                         .status(404)
-                        .json({ message: "Borrower not found" });
+                        .json({ message: 'Borrower not found' });
                 }
 
                 await borrowerCollections.updateOne(
@@ -4196,7 +4226,7 @@ async function run() {
                                 drBalance: 0,
                                 crBalance: rcvAmount,
                                 balance: cBalance?.crBalance || rcvAmount,
-                                type: "Credit",
+                                type: 'Credit',
                                 userName,
                             },
                         },
@@ -4259,7 +4289,7 @@ async function run() {
                     totalBalance: rcvAmount,
                     note,
                     date,
-                    type: "DEBT IN",
+                    type: 'DEBT IN',
                     userName,
                 });
 
@@ -4284,44 +4314,44 @@ async function run() {
                     rcvAmount,
                     note,
                     date,
-                    type: "IN",
+                    type: 'IN',
                     userName,
                 });
 
                 // Respond with success message and optional updated data
                 res.status(200).json({
-                    message: "Money received successfully",
+                    message: 'Money received successfully',
                 });
             } catch (error) {
                 res.status(500).json({
-                    error: "An error occurred while processing the request",
+                    error: 'An error occurred while processing the request',
                 });
             }
         });
 
         // get borrower list
-        app.get("/borrowerList", verifyToken, async (req, res) => {
+        app.get('/borrowerList', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
             let numericSearch = parseFloat(search);
             if (isNaN(numericSearch)) {
                 numericSearch = null;
             }
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const query = search
                 ? {
                       $or: [
                           {
-                              borrowerName: { $regex: new RegExp(search, "i") },
+                              borrowerName: { $regex: new RegExp(search, 'i') },
                           },
                           {
                               serial: numericSearch
@@ -4330,10 +4360,10 @@ async function run() {
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
-                          { address: { $regex: new RegExp(search, "i") } },
+                          { address: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -4350,31 +4380,31 @@ async function run() {
         });
 
         // get debt balance ................................................
-        app.get("/getDebtBalance", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/getDebtBalance', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await totalDebtBalanceCollections.find().toArray();
             res.send(result);
         });
 
         // get lend balance
-        app.get("/getLendBalance", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/getLendBalance', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await totalLendBalanceCollections.find().toArray();
             res.send(result);
         });
 
         // return money .................................................................................
-        app.post("/debt/returnMoney", async (req, res) => {
+        app.post('/debt/returnMoney', async (req, res) => {
             try {
                 const {
                     date,
@@ -4397,7 +4427,7 @@ async function run() {
                 if (!borrower) {
                     return res
                         .status(404)
-                        .json({ message: "Borrower not found" });
+                        .json({ message: 'Borrower not found' });
                 }
 
                 // update totalDebtBalanceCollections
@@ -4413,7 +4443,7 @@ async function run() {
                         },
                     );
                 } else {
-                    return res.json("Insufficient balance");
+                    return res.json('Insufficient balance');
                 }
 
                 const currentBalance =
@@ -4460,7 +4490,7 @@ async function run() {
                                 drBalance: payAmount,
                                 crBalance: 0,
                                 balance: cBalance.crBalance,
-                                type: "Return",
+                                type: 'Return',
                                 userName,
                             },
                         },
@@ -4487,7 +4517,7 @@ async function run() {
                     totalBalance: payAmount,
                     note: returnNote,
                     date,
-                    type: "DEBT OUT",
+                    type: 'DEBT OUT',
                     userName,
                 });
 
@@ -4512,27 +4542,27 @@ async function run() {
                     balance: payAmount,
                     note: returnNote,
                     date,
-                    type: "OUT",
+                    type: 'OUT',
                     userName,
                 });
 
                 // Respond with success message and optional updated data
-                res.send("Success");
+                res.send('Success');
             } catch (error) {
                 res.status(500).json({
-                    error: "An error occurred while processing the request",
+                    error: 'An error occurred while processing the request',
                 });
             }
         });
 
         // ........get borrower for excel...............................................................
 
-        app.get("/allBorrower", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/allBorrower', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await borrowerCollections
                 .find()
@@ -4542,12 +4572,12 @@ async function run() {
         });
 
         // Get lender due list for excel download
-        app.get("/allLender", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/allLender', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await lenderCollections
                 .find()
@@ -4558,7 +4588,7 @@ async function run() {
 
         //...................................... Lend system start here..........................................................
         // post lender
-        app.post("/lend/lenderList", async (req, res) => {
+        app.post('/lend/lenderList', async (req, res) => {
             const lenderInfo = req.body;
             const { contactNumber } = lenderInfo;
             const isLenderExist = await lenderCollections.findOne({
@@ -4585,7 +4615,7 @@ async function run() {
             };
 
             if (isLenderExist) {
-                res.json("Mobile number already exists");
+                res.json('Mobile number already exists');
             } else {
                 const result = await lenderCollections.insertOne(newLenderInfo);
                 res.send(result);
@@ -4593,16 +4623,16 @@ async function run() {
         });
 
         // get lender____________________________________________________________________
-        app.get("/lenderList", verifyToken, async (req, res) => {
+        app.get('/lenderList', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -4614,7 +4644,7 @@ async function run() {
                 ? {
                       $or: [
                           {
-                              lenderName: { $regex: new RegExp(search, "i") },
+                              lenderName: { $regex: new RegExp(search, 'i') },
                           },
                           {
                               serial: numericSearch
@@ -4623,10 +4653,10 @@ async function run() {
                           },
                           {
                               contactNumber: {
-                                  $regex: new RegExp(search, "i"),
+                                  $regex: new RegExp(search, 'i'),
                               },
                           },
-                          { address: { $regex: new RegExp(search, "i") } },
+                          { address: { $regex: new RegExp(search, 'i') } },
                       ],
                   }
                 : {};
@@ -4643,7 +4673,7 @@ async function run() {
         });
 
         // Lending money__________________________
-        app.post("/lend/givingMoney", async (req, res) => {
+        app.post('/lend/givingMoney', async (req, res) => {
             try {
                 const { date, rcvAmount, serial, note, method, userName } =
                     req.body;
@@ -4661,7 +4691,7 @@ async function run() {
                     );
                 } else {
                     // Insert new document with newBalance as mainBalance
-                    return res.json("Insufficient balance");
+                    return res.json('Insufficient balance');
                 }
 
                 const lender = await lenderCollections.findOne({ serial });
@@ -4669,7 +4699,7 @@ async function run() {
                 if (!lender) {
                     return res
                         .status(404)
-                        .json({ message: "Lender not found" });
+                        .json({ message: 'Lender not found' });
                 }
 
                 await lenderCollections.updateOne(
@@ -4725,7 +4755,7 @@ async function run() {
                     totalBalance: rcvAmount,
                     note,
                     date,
-                    type: "LEND",
+                    type: 'LEND',
                     userName,
                 });
 
@@ -4750,23 +4780,23 @@ async function run() {
                     rcvAmount,
                     note,
                     date,
-                    type: "OUT",
+                    type: 'OUT',
                     userName,
                 });
 
                 // Respond with success message and optional updated data
                 res.status(200).json({
-                    message: "Money given successfully",
+                    message: 'Money given successfully',
                 });
             } catch (error) {
                 res.status(500).json({
-                    error: "An error occurred while processing the request",
+                    error: 'An error occurred while processing the request',
                 });
             }
         });
 
         // Lending return
-        app.post("/lend/returnMoney", async (req, res) => {
+        app.post('/lend/returnMoney', async (req, res) => {
             try {
                 const {
                     date,
@@ -4788,7 +4818,7 @@ async function run() {
                 if (!lender) {
                     return res
                         .status(404)
-                        .json({ message: "Lender not found" });
+                        .json({ message: 'Lender not found' });
                 }
 
                 // update total Lend BalanceCollections
@@ -4855,7 +4885,7 @@ async function run() {
                     totalBalance: payAmount,
                     note: returnNote,
                     date,
-                    type: "LEND IN",
+                    type: 'LEND IN',
                     userName,
                 });
 
@@ -4880,30 +4910,30 @@ async function run() {
                     balance: payAmount,
                     note: returnNote,
                     date,
-                    type: "IN",
+                    type: 'IN',
                     userName,
                 });
 
                 // Respond with success message and optional updated data
-                res.send("Success");
+                res.send('Success');
             } catch (error) {
                 res.status(500).json({
-                    error: "An error occurred while processing the request",
+                    error: 'An error occurred while processing the request',
                 });
             }
         });
 
         // ------------------------------------------------------------------------------------------------------
-        app.get("/schedulePaymentDate", verifyToken, async (req, res) => {
+        app.get('/schedulePaymentDate', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             let numericSearch = parseFloat(search);
@@ -4917,12 +4947,12 @@ async function run() {
                           $or: [
                               {
                                   customerName: {
-                                      $regex: new RegExp(search, "i"),
+                                      $regex: new RegExp(search, 'i'),
                                   },
                               },
                               {
                                   customerAddress: {
-                                      $regex: new RegExp(search, "i"),
+                                      $regex: new RegExp(search, 'i'),
                                   },
                               },
                               {
@@ -4932,19 +4962,19 @@ async function run() {
                               },
                               {
                                   contactNumber: {
-                                      $regex: new RegExp(search, "i"),
+                                      $regex: new RegExp(search, 'i'),
                                   },
                               },
                               {
                                   scheduleDate: {
-                                      $regex: new RegExp(search, "i"),
+                                      $regex: new RegExp(search, 'i'),
                                   },
                               },
                           ],
                       }
                     : {}),
                 // Filter for valid `scheduleDate` and `dueAmount`
-                scheduleDate: { $exists: true, $ne: "Invalid date" },
+                scheduleDate: { $exists: true, $ne: 'Invalid date' },
                 dueAmount: { $exists: true, $gt: 0 },
             };
 
@@ -4960,14 +4990,14 @@ async function run() {
         });
 
         // Get customer due
-        app.get("/getCustomerDue", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/getCustomerDue', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
             const customerSerial = parseInt(req.query.customerID);
 
             // Check if the user is authorized
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             try {
@@ -4981,26 +5011,26 @@ async function run() {
                     if (customer.dueAmount > 0) {
                         res.send({ dueAmount: customer.dueAmount });
                     } else {
-                        res.send({ message: "No due amount greater than 0" });
+                        res.send({ message: 'No due amount greater than 0' });
                     }
                 } else {
-                    res.status(404).send({ message: "Customer not found" });
+                    res.status(404).send({ message: 'Customer not found' });
                 }
             } catch (error) {
-                console.error("Error fetching customer due:", error);
-                res.status(500).send({ message: "Internal Server Error" });
+                console.error('Error fetching customer due:', error);
+                res.status(500).send({ message: 'Internal Server Error' });
             }
         });
 
         // ------------------------------------------------------------------------------------------------------
-        app.get("/debtHistory", verifyToken, async (req, res) => {
+        app.get('/debtHistory', verifyToken, async (req, res) => {
             const serial = parseInt(req.query.serial);
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             try {
@@ -5010,22 +5040,22 @@ async function run() {
                 if (find && find.statements) {
                     res.send(find.statements); // Send only the statements array
                 } else {
-                    res.json("Statements not found");
+                    res.json('Statements not found');
                 }
             } catch (error) {
-                res.json("Internal Server Error");
+                res.json('Internal Server Error');
             }
         });
 
         // ------------------------------------------------------------------------------------------------------
-        app.get("/lendHistory", verifyToken, async (req, res) => {
+        app.get('/lendHistory', verifyToken, async (req, res) => {
             const serial = parseInt(req.query.serial);
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             try {
@@ -5035,20 +5065,20 @@ async function run() {
                 if (find && find.statements) {
                     res.send(find.statements); // Send only the statements array
                 } else {
-                    res.json("Statements not found");
+                    res.json('Statements not found');
                 }
             } catch (error) {
-                res.json("Internal Server Error");
+                res.json('Internal Server Error');
             }
         });
         // ------------------------------------------------------------------------------------------------------
         // Get all transaction for excel download
-        app.get("/getAllTransaction", verifyToken, async (req, res) => {
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+        app.get('/getAllTransaction', verifyToken, async (req, res) => {
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
             const result = await transactionCollections
                 .find()
@@ -5057,16 +5087,16 @@ async function run() {
             res.send(result);
         });
         // ------------------------------------------------------------------------------------------------------
-        app.get("/getDailySummary", verifyToken, async (req, res) => {
+        app.get('/getDailySummary', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
-            const search = req.query.search || "";
+            const search = req.query.search || '';
 
-            const userMail = req.query["userEmail"];
-            const email = req.user["email"];
+            const userMail = req.query['userEmail'];
+            const email = req.user['email'];
 
             if (userMail !== email) {
-                return res.status(401).send({ message: "Forbidden Access" });
+                return res.status(401).send({ message: 'Forbidden Access' });
             }
 
             const excelFull = await dailySummaryCollections.find().toArray();
@@ -5080,7 +5110,7 @@ async function run() {
                 ? {
                       $or: [
                           {
-                              date: { $regex: new RegExp(search, "i") },
+                              date: { $regex: new RegExp(search, 'i') },
                           },
                           {
                               totalSales: numericSearch
@@ -5113,15 +5143,15 @@ async function run() {
         });
         // --------------------------------Halkhata__------------------------------------------------------------
         // GET: /getCustomerDueList
-        app.get("/getCustomerDueList", verifyToken, async (req, res) => {
+        app.get('/getCustomerDueList', verifyToken, async (req, res) => {
             try {
-                const userMail = req.query["userEmail"];
-                const email = req.user["email"];
+                const userMail = req.query['userEmail'];
+                const email = req.user['email'];
 
                 if (userMail !== email) {
                     return res
                         .status(401)
-                        .send({ message: "Forbidden Access" });
+                        .send({ message: 'Forbidden Access' });
                 }
 
                 const page = parseInt(req.query.page) || 1;
@@ -5130,9 +5160,9 @@ async function run() {
 
                 const query = {};
 
-                if (status === "Present") {
-                    query.status = "Present";
-                } else if (status === "Pending") {
+                if (status === 'Present') {
+                    query.status = 'Present';
+                } else if (status === 'Pending') {
                     query.status = { $exists: false };
                     query.dueAmount = { $gt: 200 };
                 }
@@ -5149,29 +5179,29 @@ async function run() {
                 res.send({ result, totalCount });
             } catch (error) {
                 res.status(500).send({
-                    message: "Server Error",
+                    message: 'Server Error',
                     error: error.message,
                 });
             }
         });
 
         // ---------------------------------------Sale report----------------------------------------------------
-        app.get("/getSalesReportSummary", verifyToken, async (req, res) => {
+        app.get('/getSalesReportSummary', verifyToken, async (req, res) => {
             try {
                 const { userEmail, month } = req.query;
                 const email = req.user.email;
                 if (userEmail !== email)
                     return res
                         .status(401)
-                        .send({ message: "Forbidden Access" });
+                        .send({ message: 'Forbidden Access' });
 
-                const start = moment(month, "YYYY-MM");
-                const end = moment(start).add(1, "month");
+                const start = moment(month, 'YYYY-MM');
+                const end = moment(start).add(1, 'month');
 
                 const allSales = await salesInvoiceCollections.find().toArray();
 
                 const filteredSales = allSales.filter((sale) => {
-                    const saleDate = moment(sale.date, "DD.MM.YYYY");
+                    const saleDate = moment(sale.date, 'DD.MM.YYYY');
                     return (
                         saleDate.isValid() &&
                         saleDate.isSameOrAfter(start) &&
@@ -5193,26 +5223,26 @@ async function run() {
 
                 res.send({ totalSales, cashOnSale, dueOnSale });
             } catch (err) {
-                console.error("Summary Error:", err);
+                console.error('Summary Error:', err);
                 res.status(500).send({
-                    message: "Server error",
+                    message: 'Server error',
                     error: err.message,
                 });
             }
         });
 
-        app.get("/getSalesReportDetails", verifyToken, async (req, res) => {
+        app.get('/getSalesReportDetails', verifyToken, async (req, res) => {
             try {
                 const { userEmail, month } = req.query;
                 const email = req.user.email;
                 if (userEmail !== email) {
                     return res
                         .status(401)
-                        .send({ message: "Forbidden Access" });
+                        .send({ message: 'Forbidden Access' });
                 }
 
                 // Extract regex for MongoDB filtering (DD.MM.YYYY)
-                const [year, m] = month.split("-");
+                const [year, m] = month.split('-');
                 const monthRegex = new RegExp(`\\.${m}\\.${year}$`); // Ex: /\.07\.2025$/
 
                 // Fetch with MongoDB filter
@@ -5257,8 +5287,8 @@ async function run() {
 
                 // 🔹 Sales
                 allSales.forEach((sale) => {
-                    const dateStr = moment(sale.date, "DD.MM.YYYY").format(
-                        "YYYY-MM-DD",
+                    const dateStr = moment(sale.date, 'DD.MM.YYYY').format(
+                        'YYYY-MM-DD',
                     );
                     if (!grouped[dateStr]) grouped[dateStr] = {};
                     grouped[dateStr].cashOnSale =
@@ -5271,8 +5301,8 @@ async function run() {
 
                 // 🔹 Purchases
                 allPurchases.forEach((purchase) => {
-                    const dateStr = moment(purchase.date, "DD.MM.YYYY").format(
-                        "YYYY-MM-DD",
+                    const dateStr = moment(purchase.date, 'DD.MM.YYYY').format(
+                        'YYYY-MM-DD',
                     );
                     if (!grouped[dateStr]) grouped[dateStr] = {};
                     grouped[dateStr].cashOnPurchase =
@@ -5282,8 +5312,8 @@ async function run() {
 
                 // 🔹 Summaries
                 allSummaries.forEach((summary) => {
-                    const dateStr = moment(summary.date, "DD.MM.YYYY").format(
-                        "YYYY-MM-DD",
+                    const dateStr = moment(summary.date, 'DD.MM.YYYY').format(
+                        'YYYY-MM-DD',
                     );
                     if (!grouped[dateStr]) grouped[dateStr] = {};
                     grouped[dateStr].costing = Number(summary.totalCost || 0);
@@ -5297,13 +5327,13 @@ async function run() {
                     if (!Array.isArray(customer.paymentHistory)) return acc;
 
                     customer.paymentHistory.forEach((payment) => {
-                        const paymentDate = moment(payment.date, "DD.MM.YYYY");
+                        const paymentDate = moment(payment.date, 'DD.MM.YYYY');
                         if (
                             paymentDate.isValid() &&
-                            paymentDate.format("MM.YYYY") === `${m}.${year}` &&
-                            payment.paymentMethod !== "Return"
+                            paymentDate.format('MM.YYYY') === `${m}.${year}` &&
+                            payment.paymentMethod !== 'Return'
                         ) {
-                            const dateStr = paymentDate.format("YYYY-MM-DD");
+                            const dateStr = paymentDate.format('YYYY-MM-DD');
                             if (!acc[dateStr]) acc[dateStr] = 0;
                             acc[dateStr] += Number(payment.paidAmount || 0);
                         }
@@ -5341,9 +5371,9 @@ async function run() {
 
                 res.send(result);
             } catch (err) {
-                console.error("Details Error:", err);
+                console.error('Details Error:', err);
                 res.status(500).send({
-                    message: "Server error",
+                    message: 'Server error',
                     error: err.message,
                 });
             }
@@ -5385,7 +5415,7 @@ async function run() {
         // fs.writeFileSync('customerData.json', JSON.stringify(dataArray, null, 2));
         // ................................................................................................................
         console.log(
-            "Pinged your deployment. You successfully connected to MongoDB!",
+            'Pinged your deployment. You successfully connected to MongoDB!',
         );
     } finally {
         // Ensures that the client will close when you finish/error
