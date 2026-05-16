@@ -5200,32 +5200,35 @@ async function run() {
                         .status(401)
                         .send({ message: 'Forbidden Access' });
 
-                const start = moment(month, 'YYYY-MM');
-                const end = moment(start).add(1, 'month');
+                const end = moment();
+                const start = moment().subtract(30, 'days');
 
-                // Fetch all relevant data for the month
+                // Optimization: Fetch only recent records to avoid memory overflow
+                // We look for records in current and previous month
+                const monthRegex = new RegExp(`${moment().format('MM.YYYY')}|${moment().subtract(1, 'month').format('MM.YYYY')}`);
+
                 const [sales, purchases, expenses] = await Promise.all([
-                    salesInvoiceCollections.find().toArray(),
-                    purchaseInvoiceCollections.find().toArray(),
-                    transactionCollections.find({ type: "Cost" }).toArray()
+                    salesInvoiceCollections.find({ date: { $regex: monthRegex } }).toArray(),
+                    purchaseInvoiceCollections.find({ date: { $regex: monthRegex } }).toArray(),
+                    transactionCollections.find({ type: "Cost", date: { $regex: monthRegex } }).toArray()
                 ]);
 
-                // Filter data by date range
-                const filterByMonth = (list, dateField = 'date') => list.filter(item => {
+                // Filter data by precise 30-day window
+                const filterBy30Days = (list, dateField = 'date') => list.filter(item => {
                     const d = moment(item[dateField], 'DD.MM.YYYY');
-                    return d.isValid() && d.isSameOrAfter(start) && d.isBefore(end);
+                    return d.isValid() && d.isSameOrAfter(start, 'day') && d.isSameOrBefore(end, 'day');
                 });
 
-                const monthlySales = filterByMonth(sales);
-                const monthlyPurchases = filterByMonth(purchases);
-                const monthlyExpenses = filterByMonth(expenses);
+                const monthlySales = filterBy30Days(sales);
+                const monthlyPurchases = filterBy30Days(purchases);
+                const monthlyExpenses = filterBy30Days(expenses);
 
                 // Group by date
                 const chartDataMap = {};
                 
-                // Initialize all days of the month
+                // Initialize rolling 30 days
                 let curr = moment(start);
-                while (curr.isBefore(end)) {
+                while (curr.isSameOrBefore(end, 'day')) {
                     const dateStr = curr.format('YYYY-MM-DD');
                     chartDataMap[dateStr] = {
                         date: dateStr,

@@ -597,53 +597,62 @@ const simulateSingleExpense = async (db, targetDate, settings) => {
     ];
 
     try {
-        // Try to sample a realistic note from historical costs
-        const historicalCosts = await transactionColl.find({ type: "Cost" }).limit(50).toArray();
+        // Optimization: Sample history once or periodically
+        const historicalCosts = await transactionColl.find({ type: "Cost" }).sort({ _id: -1 }).limit(30).toArray();
         let note = getRandomElement(commonNotes);
         if (historicalCosts.length > 0 && Math.random() < 0.7) {
             note = getRandomElement(historicalCosts).note;
         }
 
+        const isHighValue = note.toLowerCase().includes("salary") || note.toLowerCase().includes("rent");
+
+        // Monthly Constraint for High Value Items
+        if (isHighValue) {
+            const currentMonth = targetDate.substring(3); // "MM.YYYY"
+            const alreadyPaid = await transactionColl.findOne({
+                note: { $regex: new RegExp(note.split(' ')[0], 'i') }, // Match first word of note (e.g. "Tajul")
+                date: { $regex: new RegExp(currentMonth) }
+            });
+            if (alreadyPaid) return null; // Skip if already paid this month
+        }
+
         // Generate realistic amount based on note
         let amount = 0;
-        if (note.toLowerCase().includes("rent")) amount = applyVariance(25000, 0.1);
-        else if (note.toLowerCase().includes("salary")) amount = applyVariance(15000, 0.2);
-        else if (note.toLowerCase().includes("electricity")) amount = applyVariance(3500, 0.3);
-        else if (note.toLowerCase().includes("labor") || note.toLowerCase().includes("leber")) amount = applyVariance(1200, 0.5);
-        else if (note.toLowerCase().includes("nasta") || note.toLowerCase().includes("pan")) amount = applyVariance(150, 0.5);
-        else amount = applyVariance(500, 0.8);
+        if (note.toLowerCase().includes("rent")) amount = applyVariance(25000, 0.05);
+        else if (note.toLowerCase().includes("salary")) amount = applyVariance(12000, 0.15);
+        else if (note.toLowerCase().includes("electricity")) amount = applyVariance(3500, 0.2);
+        else if (note.toLowerCase().includes("labor") || note.toLowerCase().includes("leber")) amount = applyVariance(800, 0.4);
+        else if (note.toLowerCase().includes("nasta") || note.toLowerCase().includes("pan")) amount = applyVariance(120, 0.4);
+        else amount = applyVariance(400, 0.6);
 
         if (amount < 10) amount = 50;
 
         // Verify main balance
         const balanceDoc = await mainBalColl.findOne();
-        if (!balanceDoc || balanceDoc.mainBalance < amount) {
-            return null; // Skip if insufficient funds
-        }
+        if (!balanceDoc || balanceDoc.mainBalance < amount) return null;
 
-        // Execute Transaction
+        // Execute Transaction (Atomic operations)
         const tSeq = await transactionColl.find().sort({ serial: -1 }).limit(1).toArray();
         const nextSer = tSeq.length > 0 && tSeq[0].serial ? tSeq[0].serial + 1 : 100;
 
-        await transactionColl.insertOne({
-            serial: nextSer,
-            totalBalance: amount,
-            note: note,
-            date: targetDate,
-            type: "Cost",
-            userName: settings.simulatedUserName,
-            simulated: true
-        });
-
-        await mainBalColl.updateOne({}, { $inc: { mainBalance: -amount } });
-        await costingBalColl.updateOne({}, { $inc: { costingBalance: amount } }, { upsert: true });
-
-        const sumDoc = await dailySummaryColl.findOne({ date: targetDate });
-        if (sumDoc) {
-            await dailySummaryColl.updateOne({ date: targetDate }, { $inc: { totalCost: amount } });
-        } else {
-            await dailySummaryColl.insertOne({ date: targetDate, totalSales: 0, totalProfit: 0, totalCost: amount });
-        }
+        await Promise.all([
+            transactionColl.insertOne({
+                serial: nextSer,
+                totalBalance: amount,
+                note: note,
+                date: targetDate,
+                type: "Cost",
+                userName: settings.simulatedUserName,
+                simulated: true
+            }),
+            mainBalColl.updateOne({}, { $inc: { mainBalance: -amount } }),
+            costingBalColl.updateOne({}, { $inc: { costingBalance: amount } }, { upsert: true }),
+            dailySummaryColl.updateOne(
+                { date: targetDate },
+                { $inc: { totalCost: amount } },
+                { upsert: true }
+            )
+        ]);
 
         return { note, amount };
     } catch (e) {
@@ -651,6 +660,7 @@ const simulateSingleExpense = async (db, targetDate, settings) => {
         return null;
     }
 };
+
 
 /**
  * Fully Autonomous Macroeconomic Emulation System

@@ -128,16 +128,15 @@ const Home = () => {
   // get chart data
   useEffect(() => {
     if (!user?.email) return;
-    const currentMonth = moment().format("YYYY-MM");
     setChartLoading(true);
     setChartError("");
     axiosSecure
       .get("/getSalesReportSummary", {
         params: {
           userEmail: user?.email,
-          month: currentMonth,
         },
       })
+
       .then((res) => {
         const normalizedData = Array.isArray(res.data)
           ? res.data.map((day) => ({
@@ -354,10 +353,10 @@ const Home = () => {
         <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              {moment().format("MMMM YYYY")}
+              Overview
             </p>
             <h2 className="text-xl font-bold uppercase text-gray-900">
-              Monthly Performance
+              Performance (Last 30 Days)
             </h2>
           </div>
 
@@ -400,7 +399,7 @@ const Home = () => {
             </div>
           ) : !hasChartData ? (
             <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm font-medium text-gray-500">
-              No monthly transaction data found.
+              No transaction data found for the last 30 days.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
