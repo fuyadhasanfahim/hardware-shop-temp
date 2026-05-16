@@ -5193,7 +5193,7 @@ async function run() {
         // ---------------------------------------Sale report----------------------------------------------------
         app.get('/getSalesReportSummary', verifyToken, async (req, res) => {
             try {
-                const { userEmail, month } = req.query;
+                const { userEmail, month } = req.query; // format: YYYY-MM
                 const email = req.user.email;
                 if (userEmail !== email)
                     return res
@@ -5203,30 +5203,64 @@ async function run() {
                 const start = moment(month, 'YYYY-MM');
                 const end = moment(start).add(1, 'month');
 
-                const allSales = await salesInvoiceCollections.find().toArray();
+                // Fetch all relevant data for the month
+                const [sales, purchases, expenses] = await Promise.all([
+                    salesInvoiceCollections.find().toArray(),
+                    purchaseInvoiceCollections.find().toArray(),
+                    transactionCollections.find({ type: "Cost" }).toArray()
+                ]);
 
-                const filteredSales = allSales.filter((sale) => {
-                    const saleDate = moment(sale.date, 'DD.MM.YYYY');
-                    return (
-                        saleDate.isValid() &&
-                        saleDate.isSameOrAfter(start) &&
-                        saleDate.isBefore(end)
-                    );
+                // Filter data by date range
+                const filterByMonth = (list, dateField = 'date') => list.filter(item => {
+                    const d = moment(item[dateField], 'DD.MM.YYYY');
+                    return d.isValid() && d.isSameOrAfter(start) && d.isBefore(end);
                 });
 
-                let cashOnSale = 0;
-                let dueOnSale = 0;
-                let dueCollection = 0;
+                const monthlySales = filterByMonth(sales);
+                const monthlyPurchases = filterByMonth(purchases);
+                const monthlyExpenses = filterByMonth(expenses);
 
-                filteredSales.forEach((sale) => {
-                    cashOnSale += Number(sale.finalPayAmount || 0);
-                    dueOnSale += Number(sale.dueAmount || 0);
-                    // dueCollection += Number(sale.prevDue || 0);
+                // Group by date
+                const chartDataMap = {};
+                
+                // Initialize all days of the month
+                let curr = moment(start);
+                while (curr.isBefore(end)) {
+                    const dateStr = curr.format('YYYY-MM-DD');
+                    chartDataMap[dateStr] = {
+                        date: dateStr,
+                        totalSale: 0,
+                        cashOnPurchase: 0,
+                        costing: 0
+                    };
+                    curr.add(1, 'day');
+                }
+
+                // Populate with actual data
+                monthlySales.forEach(s => {
+                    const date = moment(s.date, 'DD.MM.YYYY').format('YYYY-MM-DD');
+                    if (chartDataMap[date]) {
+                        chartDataMap[date].totalSale += Number(s.grandTotal || 0);
+                    }
                 });
 
-                const totalSales = cashOnSale + dueOnSale;
+                monthlyPurchases.forEach(p => {
+                    const date = moment(p.date, 'DD.MM.YYYY').format('YYYY-MM-DD');
+                    if (chartDataMap[date]) {
+                        chartDataMap[date].cashOnPurchase += Number(p.grandTotal || 0);
+                    }
+                });
 
-                res.send({ totalSales, cashOnSale, dueOnSale });
+                monthlyExpenses.forEach(e => {
+                    const date = moment(e.date, 'DD.MM.YYYY').format('YYYY-MM-DD');
+                    if (chartDataMap[date]) {
+                        chartDataMap[date].costing += Number(e.totalBalance || 0);
+                    }
+                });
+
+                const chartData = Object.values(chartDataMap).sort((a, b) => a.date.localeCompare(b.date));
+
+                res.send(chartData);
             } catch (err) {
                 console.error('Summary Error:', err);
                 res.status(500).send({
@@ -5235,6 +5269,7 @@ async function run() {
                 });
             }
         });
+
 
         app.get('/getSalesReportDetails', verifyToken, async (req, res) => {
             try {

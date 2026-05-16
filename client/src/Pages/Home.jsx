@@ -9,7 +9,7 @@ import purchase_report from "../assets/images/purchase_report.png";
 import balance from "../assets/images/balance.png";
 import logout from "../assets/images/logout.png";
 import { Link } from "react-router-dom";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { ContextData } from "../Provider";
 import useAxiosSecure from "../Components/hooks/useAxiosSecure";
 import { toast } from "react-toastify";
@@ -22,8 +22,46 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 import moment from "moment";
+
+const moneyFormatter = new Intl.NumberFormat("en-BD", {
+  maximumFractionDigits: 0,
+});
+
+const formatMoney = (value) => `BDT ${moneyFormatter.format(Number(value || 0))}`;
+
+const CustomChartTooltip = ({ active, label, payload }) => {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-md border bg-white px-4 py-3 shadow-lg">
+      <p className="mb-2 font-semibold text-gray-800">
+        {moment(label).format("DD MMM YYYY")}
+      </p>
+      <div className="space-y-1">
+        {payload.map((item) => (
+          <div
+            key={item.dataKey}
+            className="flex items-center justify-between gap-8 text-sm"
+          >
+            <span className="flex items-center gap-2 text-gray-600">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: item.color }}
+              />
+              {item.name}
+            </span>
+            <span className="font-semibold text-gray-900">
+              {formatMoney(item.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const Home = () => {
   const axiosSecure = useAxiosSecure();
@@ -42,12 +80,38 @@ const Home = () => {
   const [totalStock, setTotalStock] = useState(0);
   const [summary, setSummary] = useState(null);
   const [chartData, setChartData] = useState([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState("");
 
   const mBalance = mainBalance[0]?.mainBalance;
   const parseBalance = parseFloat(mBalance || 0);
   const currentBalance = parseFloat(parseBalance).toLocaleString(undefined, {
     minimumFractionDigits: 2,
   });
+  const monthlyTotals = useMemo(
+    () =>
+      chartData.reduce(
+        (totals, day) => ({
+          totalSale: totals.totalSale + Number(day.totalSale || 0),
+          cashOnPurchase:
+            totals.cashOnPurchase + Number(day.cashOnPurchase || 0),
+          costing: totals.costing + Number(day.costing || 0),
+        }),
+        { totalSale: 0, cashOnPurchase: 0, costing: 0 }
+      ),
+    [chartData]
+  );
+
+  const hasChartData = useMemo(
+    () =>
+      chartData.some(
+        (day) =>
+          Number(day.totalSale || 0) ||
+          Number(day.cashOnPurchase || 0) ||
+          Number(day.costing || 0)
+      ),
+    [chartData]
+  );
 
   // get summary data
   useEffect(() => {
@@ -65,6 +129,8 @@ const Home = () => {
   useEffect(() => {
     if (!user?.email) return;
     const currentMonth = moment().format("YYYY-MM");
+    setChartLoading(true);
+    setChartError("");
     axiosSecure
       .get("/getSalesReportSummary", {
         params: {
@@ -73,12 +139,26 @@ const Home = () => {
         },
       })
       .then((res) => {
-        setChartData(res.data);
+        const normalizedData = Array.isArray(res.data)
+          ? res.data.map((day) => ({
+              date: day.date,
+              totalSale: Number(day.totalSale || 0),
+              cashOnPurchase: Number(day.cashOnPurchase || 0),
+              costing: Number(day.costing || 0),
+            }))
+          : [];
+
+        setChartData(normalizedData);
       })
       .catch((err) => {
         console.error("Error fetching chart data:", err);
+        setChartError("Unable to load monthly chart data.");
+        setChartData([]);
+      })
+      .finally(() => {
+        setChartLoading(false);
       });
-  }, [reFetch, user]);
+  }, [axiosSecure, reFetch, user?.email]);
 
 
   useEffect(() => {
@@ -271,39 +351,118 @@ const Home = () => {
 
       {/* Chart Section */}
       <div className="mt-8 bg-white p-5 rounded-lg shadow-md border">
-        <h2 className="text-xl font-bold mb-5 uppercase">
-          Monthly Performance (Sales vs Purchase vs Expense)
-        </h2>
-        <div className="h-[400px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{
-                top: 20,
-                right: 30,
-                left: 20,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="date"
-                tickFormatter={(tick) => moment(tick).format("DD")}
-              />
-              <YAxis />
-              <Tooltip
-                labelFormatter={(label) => moment(label).format("DD MMM YYYY")}
-              />
-              <Legend />
-              <Bar dataKey="totalSale" name="Total Sales" fill="#16a34a" />
-              <Bar
-                dataKey="cashOnPurchase"
-                name="Total Purchase"
-                fill="#facc15"
-              />
-              <Bar dataKey="costing" name="Total Expense" fill="#ef4444" />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              {moment().format("MMMM YYYY")}
+            </p>
+            <h2 className="text-xl font-bold uppercase text-gray-900">
+              Monthly Performance
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="rounded-md border border-green-100 bg-green-50 px-4 py-2">
+              <p className="text-xs font-semibold uppercase text-green-700">
+                Sales
+              </p>
+              <p className="text-sm font-bold text-green-900">
+                {formatMoney(monthlyTotals.totalSale)}
+              </p>
+            </div>
+            <div className="rounded-md border border-amber-100 bg-amber-50 px-4 py-2">
+              <p className="text-xs font-semibold uppercase text-amber-700">
+                Purchase
+              </p>
+              <p className="text-sm font-bold text-amber-900">
+                {formatMoney(monthlyTotals.cashOnPurchase)}
+              </p>
+            </div>
+            <div className="rounded-md border border-red-100 bg-red-50 px-4 py-2">
+              <p className="text-xs font-semibold uppercase text-red-700">
+                Expense
+              </p>
+              <p className="text-sm font-bold text-red-900">
+                {formatMoney(monthlyTotals.costing)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="h-[360px] w-full sm:h-[420px]">
+          {chartLoading ? (
+            <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm font-medium text-gray-500">
+              Loading chart...
+            </div>
+          ) : chartError ? (
+            <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm font-medium text-red-500">
+              {chartError}
+            </div>
+          ) : !hasChartData ? (
+            <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm font-medium text-gray-500">
+              No monthly transaction data found.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                barGap={4}
+                barCategoryGap="22%"
+                margin={{
+                  top: 12,
+                  right: 12,
+                  left: 8,
+                  bottom: 8,
+                }}
+              >
+                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={12}
+                  tick={{ fill: "#6b7280", fontSize: 12 }}
+                  tickFormatter={(tick) => moment(tick).format("DD")}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  width={72}
+                  tick={{ fill: "#6b7280", fontSize: 12 }}
+                  tickFormatter={(value) =>
+                    moneyFormatter.format(Number(value || 0))
+                  }
+                />
+                <Tooltip cursor={{ fill: "#f3f4f6" }} content={<CustomChartTooltip />} />
+                <Legend
+                  iconType="circle"
+                  wrapperStyle={{ paddingTop: 12, fontSize: 13 }}
+                />
+                <ReferenceLine y={0} stroke="#d1d5db" />
+                <Bar
+                  dataKey="totalSale"
+                  name="Total Sales"
+                  fill="#16a34a"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={22}
+                />
+                <Bar
+                  dataKey="cashOnPurchase"
+                  name="Total Purchase"
+                  fill="#f59e0b"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={22}
+                />
+                <Bar
+                  dataKey="costing"
+                  name="Total Expense"
+                  fill="#ef4444"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={22}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
