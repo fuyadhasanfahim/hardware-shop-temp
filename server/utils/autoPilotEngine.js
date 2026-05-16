@@ -510,7 +510,146 @@ const simulateSingleSupplierAction = async (db, targetDate, settings, supplierPr
             }
         }
     }
+
+    // Scenario C: Standard (Natural Restock)
+    else {
+        const prob = Math.random();
+        if (prob < 0.3) { // 30% chance for a natural restock in standard mode
+            const sampleP = getRandomElement(historicalPurchases);
+            let realSupplier = await supplierColl.findOne({ contactNumber: sampleP.supplierContact });
+            if (!realSupplier) {
+                const sRegistry = await supplierColl.find().limit(50).toArray();
+                realSupplier = sRegistry.length > 0 ? getRandomElement(sRegistry) : null;
+            }
+
+            if (realSupplier) {
+                const restockAmt = applyVariance(25000, 0.5);
+                const finalPay = Math.round(restockAmt * 0.9); // Mostly cash for small restocks
+                const newDue = restockAmt - finalPay;
+
+                const latestPSeq = await purchaseInvoiceColl.findOne({}, { sort: { invoiceNumber: -1 } });
+                const nextPSeq = latestPSeq ? latestPSeq.invoiceNumber + 1 : 45000001;
+
+                await purchaseInvoiceColl.insertOne({
+                    userName: settings.simulatedUserName,
+                    supplierSerial: realSupplier.serial,
+                    supplierAddress: realSupplier.supplierAddress,
+                    supplierContact: realSupplier.contactNumber,
+                    date: targetDate,
+                    supplierName: realSupplier.supplierName,
+                    totalAmount: restockAmt,
+                    discountAmount: 0,
+                    grandTotal: restockAmt,
+                    finalPayAmount: finalPay,
+                    dueAmount: newDue,
+                    productList: sampleP.productList || [],
+                    invoiceNumber: nextPSeq,
+                    simulated: true,
+                    macroRouted: true
+                });
+
+                await mainBalColl.updateOne({}, { $inc: { mainBalance: -finalPay } });
+                await supplierDueBalColl.updateOne({}, { $inc: { supplierDueBalance: newDue } }, { upsert: true });
+
+                const pHistory = { date: targetDate, invoiceNumber: nextPSeq, grandTotal: restockAmt, finalPayAmount: finalPay, dueAmount: newDue, userName: settings.simulatedUserName };
+                const sLedger = await supplierDueColl.findOne({ supplierSerial: realSupplier.serial });
+
+                if (sLedger) {
+                    await supplierDueColl.updateOne({ supplierSerial: realSupplier.serial }, { $inc: { dueAmount: newDue }, $push: { purchaseHistory: pHistory } });
+                } else {
+                    await supplierDueColl.insertOne({
+                        supplierSerial: realSupplier.serial,
+                        supplierAddress: realSupplier.supplierAddress,
+                        contactPerson: realSupplier.contactPerson,
+                        contactNumber: realSupplier.contactNumber,
+                        date: targetDate,
+                        supplierName: realSupplier.supplierName,
+                        dueAmount: newDue,
+                        purchaseHistory: [pHistory],
+                        paymentHistory: []
+                    });
+                }
+                return { type: "PURCHASE", amount: restockAmt, supplierName: realSupplier.supplierName };
+            }
+        }
+    }
     return null;
+};
+
+
+
+
+
+/**
+ * Smart Expense Generator
+ * Simulates a single business expense (Cost transaction)
+ */
+const simulateSingleExpense = async (db, targetDate, settings) => {
+    const transactionColl = db.collection("transactionList");
+    const mainBalColl = db.collection("mainBalanceList");
+    const costingBalColl = db.collection("costingBalanceList");
+    const dailySummaryColl = db.collection("dailySummaryList");
+
+    const commonNotes = [
+        "Nasta", "Pan", "Staff Lunch", "Electricity Bill", "Water Bill", 
+        "Internet Bill", "Office Rent", "Conveyance", "Labor Bill", 
+        "Stationary", "Cleaning Supplies", "Generator Fuel"
+    ];
+
+    try {
+        // Try to sample a realistic note from historical costs
+        const historicalCosts = await transactionColl.find({ type: "Cost" }).limit(50).toArray();
+        let note = getRandomElement(commonNotes);
+        if (historicalCosts.length > 0 && Math.random() < 0.7) {
+            note = getRandomElement(historicalCosts).note;
+        }
+
+        // Generate realistic amount based on note
+        let amount = 0;
+        if (note.toLowerCase().includes("rent")) amount = applyVariance(25000, 0.1);
+        else if (note.toLowerCase().includes("salary")) amount = applyVariance(15000, 0.2);
+        else if (note.toLowerCase().includes("electricity")) amount = applyVariance(3500, 0.3);
+        else if (note.toLowerCase().includes("labor") || note.toLowerCase().includes("leber")) amount = applyVariance(1200, 0.5);
+        else if (note.toLowerCase().includes("nasta") || note.toLowerCase().includes("pan")) amount = applyVariance(150, 0.5);
+        else amount = applyVariance(500, 0.8);
+
+        if (amount < 10) amount = 50;
+
+        // Verify main balance
+        const balanceDoc = await mainBalColl.findOne();
+        if (!balanceDoc || balanceDoc.mainBalance < amount) {
+            return null; // Skip if insufficient funds
+        }
+
+        // Execute Transaction
+        const tSeq = await transactionColl.find().sort({ serial: -1 }).limit(1).toArray();
+        const nextSer = tSeq.length > 0 && tSeq[0].serial ? tSeq[0].serial + 1 : 100;
+
+        await transactionColl.insertOne({
+            serial: nextSer,
+            totalBalance: amount,
+            note: note,
+            date: targetDate,
+            type: "Cost",
+            userName: settings.simulatedUserName,
+            simulated: true
+        });
+
+        await mainBalColl.updateOne({}, { $inc: { mainBalance: -amount } });
+        await costingBalColl.updateOne({}, { $inc: { costingBalance: amount } }, { upsert: true });
+
+        const sumDoc = await dailySummaryColl.findOne({ date: targetDate });
+        if (sumDoc) {
+            await dailySummaryColl.updateOne({ date: targetDate }, { $inc: { totalCost: amount } });
+        } else {
+            await dailySummaryColl.insertOne({ date: targetDate, totalSales: 0, totalProfit: 0, totalCost: amount });
+        }
+
+        return { note, amount };
+    } catch (e) {
+        console.error("[Expense Simulator Exception]", e);
+        return null;
+    }
 };
 
 /**
@@ -581,7 +720,6 @@ const AutoPilotEngine = {
             const historicalSales = await salesInvoiceColl.find().sort({ _id: -1 }).limit(150).toArray();
 
             if (historicalSales.length > 0) {
-                // Generate 1 invoice with 70% weight, 2 with 30% weight to emulate real trading pacing
                 const numSalesToSimulate = Math.random() < 0.3 ? 2 : 1;
                 let simulatedSum = 0;
 
@@ -599,6 +737,15 @@ const AutoPilotEngine = {
             }
         }
 
+        // Simulate Expenses (Costing)
+        if (Math.random() < 0.25) {
+            const expResult = await simulateSingleExpense(db, targetDate, settings);
+            if (expResult) {
+                report.stepExecuted = true;
+                report.details.push(`[Expense] Recorded operational cost: ${expResult.note} (BDT ${expResult.amount.toLocaleString("en-IN")}).`);
+            }
+        }
+
         // Intermittent execution of advanced balancing protocols
         // Recover dues periodically
         if (Math.random() < 0.15) {
@@ -610,7 +757,7 @@ const AutoPilotEngine = {
         }
 
         // Order inventories or execute vendor payments periodically
-        if (Math.random() < 0.15) {
+        if (Math.random() < 0.20) {
             const purchaseInvoiceColl = db.collection("purchaseInvoiceList");
             const historicalPurchases = await purchaseInvoiceColl.find().sort({ _id: -1 }).limit(50).toArray();
 
@@ -683,6 +830,7 @@ const AutoPilotEngine = {
             totalSalesSimulated: 0,
             salesInvoicesSimulated: 0,
             purchasesSimulated: 0,
+            expensesSimulated: 0,
             customerDueCollectedSimulated: 0,
             supplierPaidSimulated: 0,
             details: []
@@ -700,7 +848,21 @@ const AutoPilotEngine = {
         }
         report.totalSalesSimulated = runningSalesTotal;
 
-        // 2. Batch Advanced Customer Collections
+        // 2. Batch Emulated Expenses
+        const numExpenses = Math.floor(Math.random() * 5) + 3; // 3-8 expenses per day
+        let totalExp = 0;
+        for (let i = 0; i < numExpenses; i++) {
+            const expResult = await simulateSingleExpense(db, targetDate, settings);
+            if (expResult) {
+                totalExp += expResult.amount;
+                report.expensesSimulated++;
+            }
+        }
+        if (report.expensesSimulated > 0) {
+            report.details.push(`[Expense Protocol] Logged ${report.expensesSimulated} business expenses totaling BDT ${totalExp.toLocaleString("en-IN")}.`);
+        }
+
+        // 3. Batch Advanced Customer Collections
         const collectionLoopLimit = customerProtocol === "COLLECT" ? Math.floor(Math.random() * 4) + 4 : Math.floor(Math.random() * 2) + 1;
         let aggregateCollected = 0;
         for (let i = 0; i < collectionLoopLimit; i++) {
@@ -714,15 +876,19 @@ const AutoPilotEngine = {
             report.details.push(`[Collection Protocol] Successfully reclaimed BDT ${aggregateCollected.toLocaleString("en-IN")} outstanding from ${report.customerDueCollectedSimulated} debtors.`);
         }
 
-        // 3. Batch Advanced Supplier Actions
-        const suppResult = await simulateSingleSupplierAction(db, targetDate, settings, supplierProtocol, currentSupplierDueGlobal, targetSupplierDue, historicalPurchases);
-        if (suppResult) {
-            if (suppResult.type === "PURCHASE") {
-                report.purchasesSimulated++;
-                report.details.push(`[Growth Protocol] Simulated restock purchase order of BDT ${suppResult.amount.toLocaleString("en-IN")} with ${suppResult.supplierName}.`);
-            } else {
-                report.supplierPaidSimulated++;
-                report.details.push(`[Settlement Protocol] Disbursed BDT ${suppResult.amount.toLocaleString("en-IN")} to Supplier ${suppResult.supplierName}.`);
+        // 4. Batch Advanced Supplier Actions
+        // Run multiple supplier actions in GROW mode to ensure stock
+        const supplierLoopLimit = supplierProtocol === "GROW" ? Math.floor(Math.random() * 2) + 1 : 1;
+        for (let i = 0; i < supplierLoopLimit; i++) {
+            const suppResult = await simulateSingleSupplierAction(db, targetDate, settings, supplierProtocol, currentSupplierDueGlobal, targetSupplierDue, historicalPurchases);
+            if (suppResult) {
+                if (suppResult.type === "PURCHASE") {
+                    report.purchasesSimulated++;
+                    report.details.push(`[Growth Protocol] Simulated restock purchase order of BDT ${suppResult.amount.toLocaleString("en-IN")} with ${suppResult.supplierName}.`);
+                } else {
+                    report.supplierPaidSimulated++;
+                    report.details.push(`[Settlement Protocol] Disbursed BDT ${suppResult.amount.toLocaleString("en-IN")} to Supplier ${suppResult.supplierName}.`);
+                }
             }
         }
 
@@ -732,3 +898,4 @@ const AutoPilotEngine = {
 };
 
 module.exports = AutoPilotEngine;
+
