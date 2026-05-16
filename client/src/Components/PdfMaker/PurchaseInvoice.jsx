@@ -1,13 +1,15 @@
+import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect, useState } from "react";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { ContextData } from "../../Provider";
 import { toast } from "react-toastify";
 import { useLocation } from "react-router-dom";
 
 
 const PurchaseInvoice = () => {
+  const axiosSecure = useAxiosSecure();
   const { user } = useContext(ContextData);
-  const axiosProtect = useAxiosProtect();
+  
   const [invoice, setInvoice] = useState({});
 
   const location = useLocation();
@@ -17,7 +19,7 @@ const PurchaseInvoice = () => {
 
   useEffect(() => {
     if (user && NID) {
-      axiosProtect
+      axiosSecure
         .get("/generatePurchaseInvoice", {
           params: {
             userEmail: user.email,
@@ -31,7 +33,7 @@ const PurchaseInvoice = () => {
           toast.error("Server error", err);
         });
     }
-  }, [user, NID, axiosProtect]);
+  }, [user, NID, axiosSecure]);
 
   const handlePrint = () => {
     window.print();

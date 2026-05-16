@@ -53,19 +53,22 @@ app.get('/', (req, res) => {
 
 // Middleware to verify JWT
 const verifyToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-
+    const authHeader = req.headers.authorization;
     if (!authHeader) {
-        return res.status(401).send({ message: 'Access forbidden' });
+        console.log("verifyToken: No authHeader. Headers:", JSON.stringify(req.headers));
+        return res.status(401).send({ message: 'No authorization' });
     }
+
 
     const token = authHeader.split(' ')[1];
     if (!token) {
+        console.log("verifyToken: No token in header");
         return res.status(401).send({ message: 'No authorization' });
     }
 
     jwt.verify(token, process.env.TOKEN_SECRET, (err, decoded) => {
         if (err) {
+            console.log("verifyToken: JWT verification failed", err.message);
             return res
                 .status(403)
                 .send({ message: 'Forbidden: Invalid token' });
@@ -78,6 +81,7 @@ const verifyToken = (req, res, next) => {
 // JWT token generation
 app.post('/jwt', (req, res) => {
     const { email } = req.body;
+    console.log("JWT requested for:", email);
     if (!email) {
         return res.status(400).send({ message: 'Email is required' });
     }
@@ -85,6 +89,7 @@ app.post('/jwt', (req, res) => {
     const token = jwt.sign({ email }, process.env.TOKEN_SECRET, {
         expiresIn: '24h',
     });
+    console.log("JWT generated successfully");
     res.send({ success: true, token });
 });
 
@@ -918,7 +923,7 @@ async function run() {
         });
 
         // show costing balance only
-        app.get('/costingBalance', async (req, res) => {
+        app.get('/costingBalance', verifyToken, async (req, res) => {
             const userMail = req.query['userEmail'];
             const email = req.user['email'];
 
@@ -981,7 +986,7 @@ async function run() {
             res.send({ result, count });
         });
         // show all transactions of costing list............................................
-        app.get('/costingTransactions', async (req, res) => {
+        app.get('/costingTransactions', verifyToken, async (req, res) => {
             const page = parseInt(req.query.page);
             const size = parseInt(req.query.size);
             const search = req.query.search || '';

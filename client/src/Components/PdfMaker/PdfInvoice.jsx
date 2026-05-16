@@ -1,13 +1,15 @@
+import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect, useState } from "react";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { ContextData } from "../../Provider";
 import { toast } from "react-toastify";
 import { useLocation } from "react-router-dom";
 import logo from "../../assets/images/logo_red.png";
 
 const PdfInvoice = () => {
+  const axiosSecure = useAxiosSecure();
   const { user } = useContext(ContextData);
-  const axiosProtect = useAxiosProtect();
+  
   const [invoice, setInvoice] = useState({});
 
   const location = useLocation();
@@ -17,7 +19,7 @@ const PdfInvoice = () => {
 
   useEffect(() => {
     if (user && NID) {
-      axiosProtect
+      axiosSecure
         .get("/generateSalesInvoice", {
           params: {
             userEmail: user.email,
@@ -31,7 +33,7 @@ const PdfInvoice = () => {
           toast.error("Server error", err);
         });
     }
-  }, [user, NID, axiosProtect]);
+  }, [user, NID, axiosSecure]);
 
   const handlePrint = () => {
     const printSection = document.getElementById("printSection");

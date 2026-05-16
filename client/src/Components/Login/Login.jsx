@@ -6,59 +6,21 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ContextData } from "../../Provider";
 import Swal from "sweetalert2";
 import logo from '../../assets/images/logo_white.png';
-import axios from "axios";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const { loginWithEmail, setUser } = useContext(ContextData);
+  const { loginWithEmail, user, tokenReady, loading } = useContext(ContextData);
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/";
 
-  // useEffect(() => {
-  //   if (user) {
-  //     navigate("/");
-  //   }
-  // }, [user, navigate]);
-
+  // Redirect if already logged in and token is ready
   useEffect(() => {
-    if (localStorage.getItem('jwtToken')) {
-      navigate(from, { replace: true }); // Redirect if already logged in
+    if (user && tokenReady) {
+      console.log("Login: User and Token ready, navigating to", from);
+      navigate(from, { replace: true });
     }
-  }, [navigate, from]);
-
-
-  // const handleEmailLogin = (e) => {
-  //   e.preventDefault();
-
-  //   const email = e.target.email.value;
-  //   const password = e.target.password.value;
-
-  //   loginWithEmail(email, password)
-  //     .then((result) => {
-  //       // Signed in
-
-  //       navigate(from, { replace: true });
-  //       const user = result.user;
-  //       setUser(user);
-  //       Swal.fire({
-  //         title: "Login successfully",
-  //         icon: "success",
-  //       });
-
-  //       // navigate(location?.state ? location.state : "/");
-
-  //     })
-  //     .catch((error) => {
-  //       const errorCode = error.code;
-  //       const errorMessage = error.message;
-  //       Swal.fire({
-  //         title: errorCode,
-  //         text: errorMessage,
-  //         icon: "error",
-  //       });
-  //     });
-  // };
+  }, [user, tokenReady, navigate, from]);
 
 
   const handleEmailLogin = (e) => {
@@ -69,24 +31,18 @@ const Login = () => {
 
     loginWithEmail(email, password)
       .then((result) => {
-        const user = result.user;
-        const emailData = { email: user.email };
-
-        // Request JWT token
-        return axios.post(`${import.meta.env.VITE_API_URL}/jwt`, emailData)
-          .then((res) => {
-            if (res.data.token) {
-              localStorage.setItem('jwtToken', res.data.token); // Store token in localStorage
-              setUser(user);
-              navigate(from, { replace: true }); // Redirect after login
-              Swal.fire({
-                title: 'Login successful',
-                icon: 'success',
-              });
-            }
-          });
+        console.log("Firebase login success");
+        // No need to navigate here, the useEffect will handle it when tokenReady becomes true
+        Swal.fire({
+          title: 'Login successful',
+          text: 'Acquiring security token...',
+          icon: 'success',
+          showConfirmButton: false,
+          timer: 2000
+        });
       })
       .catch((error) => {
+        console.error("Firebase login error:", error);
         Swal.fire({
           title: 'Error',
           text: error.message,
@@ -98,41 +54,49 @@ const Login = () => {
   return (
     <div className="">
       <div className="fanwood flex justify-center items-center lg:py-8 px-4 bg-gray-800 h-[100vh]">
-        <div className="flex flex-col bg-gray-700 lg:p-14 md:p-10 p-5 lg:w-1/2 md:w-2/3 gap-3 mx-auto max-w-screen-2xl lg:bg-opacity-90 shadow-md border rounded-md">
-          <div><img src={logo} alt="" /></div>
+        <div className="flex flex-col bg-gray-700 lg:p-14 md:p-10 p-5 lg:w-1/2 md:w-2/3 gap-3 mx-auto max-w-screen-2xl lg:bg-opacity-90 shadow-md border rounded-md text-white">
+          <div className="flex justify-center mb-5"><img src={logo} alt="Logo" className="w-48" /></div>
 
+          <h2 className="text-center text-2xl font-bold mb-5 uppercase">Sign In</h2>
 
-          <form className="flex flex-col gap-5 mt-5" onSubmit={handleEmailLogin}>
-            <label className="input input-bordered flex items-center gap-2">
-              <MdOutlineMail />
+          <form className="flex flex-col gap-5" onSubmit={handleEmailLogin}>
+            <label className="input input-bordered flex items-center gap-2 text-black bg-white">
+              <MdOutlineMail className="text-gray-500" />
               <input
                 type="email"
                 name="email"
                 placeholder="Email"
                 required
-                className="w-full"
+                className="w-full bg-transparent outline-none"
               />
             </label>
 
-            <label className="input input-bordered flex items-center gap-2 relative">
-              <RiLockPasswordLine />
+            <label className="input input-bordered flex items-center gap-2 relative text-black bg-white">
+              <RiLockPasswordLine className="text-gray-500" />
               <input
                 type={showPassword ? "text" : "password"}
                 name="password"
                 placeholder="Password"
                 required
-                className="w-full pr-5"
+                className="w-full pr-10 bg-transparent outline-none"
               />
               <span
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 cursor-pointer"
+                className="absolute right-4 cursor-pointer text-gray-500 hover:text-gray-700"
               >
                 {showPassword ? <IoEyeOutline /> : <IoEyeOffOutline />}
               </span>
             </label>
 
-            <button className="py-2 px-5 rounded-md w-full custom-button bg-green-500 text-white">
-              Login
+            <button 
+              disabled={loading}
+              className={`py-3 px-5 rounded-md w-full font-bold uppercase transition-all ${
+                loading 
+                  ? "bg-gray-500 cursor-not-allowed" 
+                  : "bg-green-600 hover:bg-green-700 active:scale-95 shadow-lg shadow-green-900/20"
+              } text-white`}
+            >
+              {loading ? "Authenticating..." : "Login"}
             </button>
           </form>
         </div>

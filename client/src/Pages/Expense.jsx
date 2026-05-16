@@ -4,11 +4,11 @@ import AddCosting from "../Components/AddCosting/AddCosting";
 import { ContextData } from "../Provider";
 import { toast } from "react-toastify";
 import useAxiosSecure from "../Components/hooks/useAxiosSecure";
-import useAxiosProtect from "../Components/hooks/useAxiosProtect";
+
 
 const Expense = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const [costingBalance, setCostingBalance] = useState([]);
   const [transaction, setTransaction] = useState([]);
   const [profit, setProfit] = useState([]);
@@ -27,7 +27,7 @@ const Expense = () => {
 
   // get costing balance
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get("/costingBalance", {
         params: {
           userEmail: user?.email,
@@ -50,7 +50,7 @@ const Expense = () => {
 
   // get profit balance
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get("/profitBalance", {
         params: {
           userEmail: user?.email,
@@ -66,7 +66,7 @@ const Expense = () => {
 
   // show transactions
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/allTransactions`, {
         params: {
           userEmail: user?.email,
@@ -79,7 +79,7 @@ const Expense = () => {
         setTransaction(res.data.result);
         setCount(res.data.count);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
   useEffect(() => {
     axiosSecure
@@ -164,7 +164,7 @@ const Expense = () => {
 
   // ............... get main balance
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get("/mainBalance", {
         params: {
           userEmail: user?.email,
@@ -322,7 +322,7 @@ const Expense = () => {
           >
             <option value="20">20</option>
             <option value="50">50</option>
-            <option value="50">100</option>
+            <option value="100">100</option>
           </select>
         </div>
       )}

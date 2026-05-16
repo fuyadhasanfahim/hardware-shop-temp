@@ -1,5 +1,6 @@
+import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect, useState } from "react";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { ContextData } from "../../Provider";
 import { toast } from "react-toastify";
 import { useLocation } from "react-router-dom";
@@ -7,8 +8,9 @@ import logo from "../../assets/images/logo_red.png";
 
 
 const QuotationInvoice = () => {
+  const axiosSecure = useAxiosSecure();
   const { user } = useContext(ContextData);
-  const axiosProtect = useAxiosProtect();
+  
   const [invoice, setInvoice] = useState({});
 
   const location = useLocation();
@@ -18,7 +20,7 @@ const QuotationInvoice = () => {
 
   useEffect(() => {
     if (user && id) {
-      axiosProtect
+      axiosSecure
         .get("/generateQuotationInvoice", {
           params: {
             userEmail: user.email,
@@ -32,7 +34,7 @@ const QuotationInvoice = () => {
           toast.error("Server error", err);
         });
     }
-  }, [user, id, axiosProtect]);
+  }, [user, id, axiosSecure]);
 
   const handlePrint = () => {
     const printSection = document.getElementById("printSection");

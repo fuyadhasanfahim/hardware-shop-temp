@@ -6,11 +6,11 @@ import { ContextData } from "../Provider";
 import { toast } from "react-toastify";
 import { IoEyeOutline } from "react-icons/io5";
 import useAxiosSecure from "../Components/hooks/useAxiosSecure";
-import useAxiosProtect from "../Components/hooks/useAxiosProtect";
+
 
 const Purchase = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const {reFetch, productCount, setItemsPerPage, user} = useContext(ContextData);
   const [invoice, setInvoice] = useState([]);
   const [count, setCount] = useState({});
@@ -20,7 +20,7 @@ const Purchase = () => {
 
 
   useEffect(()=> {
-    axiosProtect.get('/invoices' , {
+    axiosSecure.get('/invoices' , {
       params: {
         userEmail: user?.email,
         page: currentPage,
@@ -35,7 +35,7 @@ const Purchase = () => {
       toast.error('Server error', err);
     });
 
-  },[reFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+  },[reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
 
   useEffect(() => {

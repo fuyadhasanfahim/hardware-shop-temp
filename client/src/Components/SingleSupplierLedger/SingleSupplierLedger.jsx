@@ -5,12 +5,12 @@ import { toast } from "react-toastify";
 import { ContextData } from "../../Provider";
 import moment from "moment";
 import Swal from "sweetalert2";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { IoEyeOutline } from "react-icons/io5";
 
 const SingleSupplierLedger = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
 
   const [singleSupplier, setSingleSupplier] = useState([]);
   const [filteredPurchaseHistory, setFilteredPurchaseHistory] = useState([]);
@@ -27,7 +27,7 @@ const SingleSupplierLedger = () => {
 
   useEffect(() => {
     const fetchSupplierData = async () => {
-      const response = await axiosProtect.get(`/singleSupplier/${id}`, {
+      const response = await axiosSecure.get(`/singleSupplier/${id}`, {
         params: {
           userEmail: user?.email,
           searchTerm,

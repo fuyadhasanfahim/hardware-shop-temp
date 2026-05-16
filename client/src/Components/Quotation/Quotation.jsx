@@ -4,11 +4,11 @@ import { ContextData } from "../../Provider";
 import { toast } from "react-toastify";
 import { Link } from "react-router-dom";
 import { IoEyeOutline } from "react-icons/io5";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 
 const Quotation = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const { reFetch, productCount, user } = useContext(ContextData);
   const [invoice, setInvoice] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -17,7 +17,7 @@ const Quotation = () => {
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get("/quotationInvoice", {
         params: {
           userEmail: user?.email,
@@ -33,7 +33,7 @@ const Quotation = () => {
       .catch((err) => {
         toast.error("Server error", err);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
   useEffect(() => {
     axiosSecure

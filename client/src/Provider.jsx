@@ -1,5 +1,4 @@
-import { createContext, useEffect, useState } from "react";
-import useAxiosSecure from "./Components/hooks/useAxiosSecure";
+import { createContext, useEffect, useState, useCallback } from "react";
 import { toast } from "react-toastify";
 import {
   onAuthStateChanged,
@@ -12,7 +11,6 @@ import axios from "axios";
 export const ContextData = createContext(null);
 
 const Provider = ({ children }) => {
-  const axiosSecure = useAxiosSecure();
   const [reFetch, setReFetch] = useState(false);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -25,10 +23,10 @@ const Provider = ({ children }) => {
   const [mainBalance, setMainBalance] = useState(0);
   const [stock, setStock] = useState([]);
   const [user, setUser] = useState(null);
-  const [count, setCount] = useState({});
-  const [customerCount, setCustomerCount] = useState({});
-  const [productCount, setProductCount] = useState({});
-  const [supplierCount, setSupplierCount] = useState({});
+  const [count, setCount] = useState(0);
+  const [customerCount, setCustomerCount] = useState(0);
+  const [productCount, setProductCount] = useState(0);
+  const [supplierCount, setSupplierCount] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -37,6 +35,19 @@ const Provider = ({ children }) => {
   const [searchCustomer, setSearchCustomer] = useState("");
   const [tokenReady, setTokenReady] = useState(false);
 
+  // Helper for authenticated requests inside Provider
+  const authAxios = useCallback((config) => {
+    const token = localStorage.getItem("jwtToken");
+    const headers = { ...config.headers };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return axios({
+      ...config,
+      baseURL: import.meta.env.VITE_API_URL,
+      headers,
+    });
+  }, []);
 
   let userName;
   user?.email === "asad4design@gmail.com"
@@ -49,28 +60,19 @@ const Provider = ({ children }) => {
     ? (userName = "DEVELOPER")
     : null;
 
-  // Token validation logic
-  const validateToken = async () => {
-    const token = localStorage.getItem("jwtToken");
-    if (token) {
-      try {
-        const response = await axios.post(`${import.meta.env.VITE_API_URL}/validate-token`, { token });
-        if (response.data.success) {
-          setUser(response.data.user); // Set user if token is valid
-          setTokenReady(true);
-        } else {
-          localStorage.removeItem("jwtToken");
-          setUser(null);
-        }
-      } catch (error) {
-        console.error("Error validating token:", error);
-        localStorage.removeItem("jwtToken");
-        setUser(null);
+  // Token validation helper
+  const validateTokenHelper = async (token) => {
+    if (!token) return null;
+    try {
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/validate-token`, { token });
+      if (response.data.success) {
+        return response.data.user;
       }
-    } else {
-      setUser(null);
+    } catch (error) {
+      console.error("Token validation failed:", error);
     }
-    setLoading(false); // Stop loading after token validation
+    localStorage.removeItem("jwtToken");
+    return null;
   };
 
   // Authentication functions
@@ -82,157 +84,191 @@ const Provider = ({ children }) => {
   const logOut = async () => {
     setLoading(true);
     try {
-      await signOut(auth); // Await the signOut process
-      localStorage.removeItem("jwtToken"); // Remove token from localStorage
-      setUser(null); // Clear user
-      setTokenReady(false); // Clear token state
+      await signOut(auth);
+      localStorage.removeItem("jwtToken");
+      setUser(null);
+      setTokenReady(false);
     } catch (error) {
-      console.error("Error logging out:", error); // Handle any errors
+      console.error("Error logging out:", error);
     } finally {
-      setLoading(false); // Always stop loading, whether successful or not
+      setLoading(false);
     }
   };
 
-  // Data fetching useEffects
+  // Data fetching useEffects with auth guards
   useEffect(() => {
-    axiosSecure
-      .get("/customers", {
-        params: {
-          page: currentPage,
-          size: itemsPerPage,
-          search: searchCustomer,
-        },
-      })
+    if (!user || !tokenReady) return;
+    authAxios({
+      url: "/customers",
+      params: {
+        page: currentPage,
+        size: itemsPerPage,
+        search: searchCustomer,
+      },
+    })
       .then((data) => {
         setCustomer(data.data.result);
         setCustomerCount(data.data.count);
       })
       .catch((err) => {
-        toast("Error fetching data", err);
+        console.error("Error fetching customers:", err);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchCustomer, axiosSecure]);
+  }, [reFetch, currentPage, itemsPerPage, searchCustomer, authAxios, user, tokenReady]);
 
   useEffect(() => {
-    axiosSecure.get("/categories").then((data) => setCategories(data.data));
-  }, [reFetch]);
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/categories" }).then((data) => setCategories(data.data));
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure.get("/brands").then((data) => setBrands(data.data));
-  }, [reFetch]);
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/brands" }).then((data) => setBrands(data.data));
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure.get("/units").then((data) => setUnits(data.data));
-  }, [reFetch]);
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/units" }).then((data) => setUnits(data.data));
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/products", {
-        params: {
-          disablePagination: true, // Disable pagination for this request
-        },
-      })
+    if (!user || !tokenReady) return;
+    authAxios({
+      url: "/products",
+      params: {
+        disablePagination: true,
+      },
+    })
       .then((data) => {
-        setAllProducts(data.data.products); // Now you get all products
+        setAllProducts(data.data.products);
       })
       .catch((error) => {
-        console.error("Error fetching products:", error);
+        console.error("Error fetching all products:", error);
       });
-  }, [reFetch]);
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/products", {
-        params: {
-          userEmail: user?.email,
-          page: currentPage,
-          size: itemsPerPage,
-          search: searchTerm,
-        },
-      })
+    if (!user || !tokenReady) return;
+    authAxios({
+      url: "/products",
+      params: {
+        userEmail: user?.email,
+        page: currentPage,
+        size: itemsPerPage,
+        search: searchTerm,
+      },
+    })
       .then((data) => {
         setProducts(data.data.products);
         setProductCount(data.data.count);
-        setLoading(false);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
+  }, [reFetch, currentPage, itemsPerPage, searchTerm, authAxios, user, tokenReady]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/stockCount")
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/stockCount" })
       .then((res) => {
         setCount(res.data.count);
       })
       .catch((err) => {
-        toast.error("Server error", err);
+        console.error("Error fetching stockCount:", err);
       });
-  }, [reFetch]);
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/customerCount")
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/customerCount" })
       .then((res) => {
         setCustomerCount(res.data.count);
       })
       .catch((err) => {
-        toast.error("Server error", err);
+        console.error("Error fetching customerCount:", err);
       });
-  }, [reFetch]);
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/productTotalCount")
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/productTotalCount" })
       .then((res) => {
         setProductCount(res.data.count);
       })
       .catch((err) => {
-        toast.error("Server error", err);
+        console.error("Error fetching productTotalCount:", err);
       });
-  }, [reFetch]);
+  }, [reFetch, user, tokenReady, authAxios]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/suppliers", {
-        params: {
-          userEmail: user?.email,
-          page: currentPage,
-          size: itemsPerPage,
-          search: searchSupplier,
-        },
-      })
+    if (!user || !tokenReady) return;
+    authAxios({
+      url: "/suppliers",
+      params: {
+        userEmail: user?.email,
+        page: currentPage,
+        size: itemsPerPage,
+        search: searchSupplier,
+      },
+    })
       .then((data) => {
         setSupplier(data.data.result);
         setSupplierCount(data.data.count);
       })
       .catch((err) => {
-        toast("Error fetching data", err);
+        console.error("Error fetching suppliers:", err);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchSupplier, axiosSecure]);
+  }, [reFetch, currentPage, itemsPerPage, searchSupplier, authAxios, user, tokenReady]);
 
   useEffect(() => {
-    axiosSecure
-      .get("/supplierTotalCount")
+    if (!user || !tokenReady) return;
+    authAxios({ url: "/supplierTotalCount" })
       .then((res) => {
         setSupplierCount(res.data.count);
       })
       .catch((err) => {
-        toast.error("Server error", err);
+        console.error("Error fetching supplierTotalCount:", err);
       });
-  }, [reFetch]);
+  }, [reFetch, user, tokenReady, authAxios]);
 
-  // Firebase authentication listener
+  // Firebase authentication listener combined with JWT management
   useEffect(() => {
-    const unSubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const handleAuthChange = async (currentUser) => {
+      console.log("Auth change detected:", currentUser?.email);
+      setLoading(true);
+      if (currentUser) {
+        const token = localStorage.getItem("jwtToken");
+        let validatedUser = null;
+        if (token) {
+          console.log("Found token, validating...");
+          validatedUser = await validateTokenHelper(token);
+        }
+
+        if (!validatedUser) {
+          console.log("No valid token, fetching new one...");
+          try {
+            const res = await axios.post(`${import.meta.env.VITE_API_URL}/jwt`, { email: currentUser.email });
+            console.log("New token acquired");
+            localStorage.setItem("jwtToken", res.data.token);
+            setUser(currentUser);
+            setTokenReady(true);
+          } catch (err) {
+            console.error("Error getting JWT:", err);
+            setUser(null);
+            setTokenReady(false);
+            toast.error("Security token failed. Please try logging in again.");
+          }
+        } else {
+          console.log("Token validated successfully");
+          setUser(currentUser);
+          setTokenReady(true);
+        }
+      } else {
+        console.log("No user logged in");
+        setUser(null);
+        setTokenReady(false);
+      }
       setLoading(false);
-    });
-    return () => {
-      unSubscribe();
     };
-  }, []);
 
-  // Validate token on app load
-  useEffect(() => {
-    validateToken();
+    const unSubscribe = onAuthStateChanged(auth, handleAuthChange);
+    return () => unSubscribe();
   }, []);
 
   const info = {
@@ -273,6 +309,7 @@ const Provider = ({ children }) => {
     setCount,
     setSearchCustomer,
     setSearchSupplier,
+    tokenReady,
   };
 
   return <ContextData.Provider value={info}>{children}</ContextData.Provider>;

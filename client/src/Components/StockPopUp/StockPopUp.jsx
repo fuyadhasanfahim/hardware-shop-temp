@@ -1,12 +1,14 @@
+import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect } from "react";
 import { FcWorkflow } from "react-icons/fc";
 import { ContextData } from "../../Provider";
 import { CiSearch } from "react-icons/ci";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { toast } from "react-toastify";
 
 const StockPopUp = () => {
-  const axiosProtect = useAxiosProtect();
+  const axiosSecure = useAxiosSecure();
+  
     const {stock, setSearchStock, setCurrentPage, user, currentPage, itemsPerPage,
       searchStock, setCount, setStock, reFetch
      } = useContext(ContextData);
@@ -27,7 +29,7 @@ const StockPopUp = () => {
 
      // get stock balance
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/stockBalance`, {
         params: {
           userEmail: user?.email,

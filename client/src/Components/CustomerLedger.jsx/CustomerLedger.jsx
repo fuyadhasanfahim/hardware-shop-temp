@@ -5,11 +5,11 @@ import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import { IoEyeOutline } from "react-icons/io5";
 import { ContextData } from "../../Provider";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 
 const CustomerLedger = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const { reFetch, setReFetch, user } = useContext(ContextData);
   const [customer, setCustomer] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -19,7 +19,7 @@ const CustomerLedger = () => {
 
   // get customer due list
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/customerLedger`, {
         params: {
           userEmail: user?.email,
@@ -35,7 +35,7 @@ const CustomerLedger = () => {
       .catch((err) => {
         toast.error("Server error", err);
       });
-  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+  }, [reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
   // const navigate = useNavigate();
 

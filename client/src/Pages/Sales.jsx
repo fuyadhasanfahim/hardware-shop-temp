@@ -3,13 +3,13 @@ import { IoEyeOutline } from "react-icons/io5";
 import { Link } from "react-router-dom";
 import useAxiosSecure from "../Components/hooks/useAxiosSecure";
 import { ContextData } from "../Provider";
-import useAxiosProtect from "../Components/hooks/useAxiosProtect";
+
 
 
 
 const Sales = () => {
     const axiosSecure = useAxiosSecure();
-    const axiosProtect = useAxiosProtect();
+    
 
     const {reFetch, productCount, setItemsPerPage, user} = useContext(ContextData);
     const [invoice, setInvoice] = useState([]);
@@ -21,7 +21,7 @@ const Sales = () => {
 
 
     useEffect(()=> {
-      axiosProtect.get('/salesInvoices', {
+      axiosSecure.get('/salesInvoices', {
           params: {
             userEmail: user?.email,
             page: currentPage,
@@ -36,7 +36,7 @@ const Sales = () => {
           toast.error('Server error', err);
         });
     
-      },[reFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+      },[reFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
 
       useEffect(() => {

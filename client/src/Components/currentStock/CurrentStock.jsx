@@ -1,7 +1,8 @@
+import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect, useState } from "react";
 import { CiSearch } from "react-icons/ci";
 import { ContextData } from "../../Provider";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import excel from "../../assets/images/excel.png";
 import pdf from "../../assets/images/pdf.png";
 import jsPDF from "jspdf";
@@ -10,7 +11,8 @@ import * as XLSX from "xlsx";
 import { toast } from "react-toastify";
 
 const CurrentStock = () => {
-  const axiosProtect = useAxiosProtect();
+  const axiosSecure = useAxiosSecure();
+  
   const {
     user,
     stock,
@@ -29,7 +31,7 @@ const CurrentStock = () => {
   const [downloadStock, setDownloadStock] = useState([]);
 
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/stockBalance`, {
         params: {
           userEmail: user?.email,
@@ -59,7 +61,7 @@ const CurrentStock = () => {
 
   // get stock balance
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/stockBalance`, {
         params: {
           userEmail: user?.email,

@@ -5,13 +5,13 @@ import { useLocation } from "react-router-dom";
 import Swal from "sweetalert2";
 import moment from "moment";
 import { toast } from "react-toastify";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 import { IoEyeOutline } from "react-icons/io5";
 
 const SingleCustomerLedger = () => {
   const [singleCustomer, setSingleCustomer] = useState([]);
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const { reFetch, setReFetch, userName, user } = useContext(ContextData);
   const [filteredSalesHistory, setFilteredSalesHistory] = useState([]);
   const [payAmount, setPayAmount] = useState("");
@@ -33,7 +33,7 @@ const SingleCustomerLedger = () => {
   //
   useEffect(() => {
     const fetchCustomerData = async () => {
-      const response = await axiosProtect.get(`/singleCustomer/${id}`, {
+      const response = await axiosSecure.get(`/singleCustomer/${id}`, {
         params: {
           userEmail: user?.email,
           searchTerm,

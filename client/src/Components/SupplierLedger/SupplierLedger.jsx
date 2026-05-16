@@ -5,11 +5,11 @@ import useAxiosSecure from "../hooks/useAxiosSecure";
 import { useContext, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { ContextData } from "../../Provider";
-import useAxiosProtect from "../hooks/useAxiosProtect";
+
 
 const SupplierLedger = () => {
   const axiosSecure = useAxiosSecure();
-  const axiosProtect = useAxiosProtect();
+  
   const { reFetch, setReFetch, user } = useContext(ContextData);
   const [searchTerm, setSearchTerm] = useState("");
   const [supplier, setSupplier] = useState([]);
@@ -19,7 +19,7 @@ const SupplierLedger = () => {
 
   // get supplier due list
   useEffect(() => {
-    axiosProtect
+    axiosSecure
       .get(`/supplierLedger`, {
         params: {
           userEmail: user?.email,
@@ -35,7 +35,7 @@ const SupplierLedger = () => {
       .catch((err) => {
         toast.error("Server error, err");
       });
-  }, [setReFetch, currentPage, itemsPerPage, searchTerm, axiosProtect]);
+  }, [setReFetch, currentPage, itemsPerPage, searchTerm, axiosSecure]);
 
   // const navigate = useNavigate();
 
