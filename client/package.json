@@ -13,6 +13,7 @@
     "@material-tailwind/react": "^2.1.9",
     "@react-pdf/renderer": "^3.4.4",
     "axios": "^1.6.8",
+    "date-fns": "^4.4.0",
     "firebase": "^10.11.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.1",

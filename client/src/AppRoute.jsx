@@ -24,6 +24,8 @@ import DeviceRestriction from "./Pages/DeviceRestriction";
 import NotFound from "./Pages/NotFound";
 import QuotationInvoice from "./Components/PdfMaker/QuotationInvoice";
 import TradeReturn from "./Components/Return/TradeReturn";
+import AnalyticsDashboard from "./Pages/AnalyticsDashboard";
+import ReportsPage from "./Pages/ReportsPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -57,6 +59,8 @@ export const router = createBrowserRouter([
       { path: "/supplierLedger/id/:_id", element: <SingleSupplierLedger /> },
       { path: "/customerLedger/id/:_id", element: <SingleCustomerLedger /> },
       { path: "/return", element: <TradeReturn /> },
+      { path: "/analytics", element: <AnalyticsDashboard /> },
+      { path: "/reports", element: <ReportsPage /> },
     ],
   },
 ]);

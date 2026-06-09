@@ -324,6 +324,26 @@ const Sidebar = () => {
             Return{" "}
           </NavLink>
         </div>
+
+        <div>
+          <NavLink
+            to="/analytics"
+            className="p-2 w-full hover:text-white flex items-center gap-2 hover:bg-[#151515] mb-[1px]"
+          >
+            <FcPieChart className="text-xl" />
+            Analytics
+          </NavLink>
+        </div>
+
+        <div>
+          <NavLink
+            to="/reports"
+            className="p-2 w-full hover:text-white flex items-center gap-2 hover:bg-[#151515] mb-[1px]"
+          >
+            <FcDocument className="text-xl" />
+            Reports
+          </NavLink>
+        </div>
       </nav>
     </div>
   );

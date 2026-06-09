@@ -9,6 +9,8 @@ const XLSX = require('xlsx');
 const { format } = require('date-fns');
 const { setupDailySummaryCron } = require('./utils/cronJobs');
 const AutoPilotEngine = require('./utils/autoPilotEngine');
+const { setupReportRoutes } = require('./routes/reportRoutes');
+const { setupAnalyticsRoutes } = require('./routes/analyticsRoutes');
 
 const app = express();
 app.use(
@@ -188,6 +190,10 @@ async function run() {
         const returnPurchaseCollections =
             database.collection('returnPurchaseList');
         const dailySummaryCollections = database.collection('dailySummaryList');
+
+        // Setup Analytics and Report Routes
+        setupReportRoutes(app, database);
+        setupAnalyticsRoutes(app, database);
 
         // ****************************************************************************
         // const result = await customerDueCollections.find(
