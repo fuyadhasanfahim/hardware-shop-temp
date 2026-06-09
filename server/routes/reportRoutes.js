@@ -383,6 +383,14 @@ const setupReportRoutes = (app, database) => {
         return { title, columns, rows, cards };
     };
 
+    const crypto = require('crypto');
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+
+    // In-memory job store
+    const jobs = new Map();
+
     app.post('/api/reports/generate', async (req, res) => {
         try {
             const {
@@ -394,94 +402,157 @@ const setupReportRoutes = (app, database) => {
                 endDateValue,
             } = req.body;
 
-            const period = resolvePeriod(
-                filterType,
-                dateValue,
-                startDateValue,
-                endDateValue,
-            );
+            const jobId = crypto.randomUUID();
+            jobs.set(jobId, { status: 'processing' });
 
-            let report;
-            if (reportType === 'sales') {
-                report = await buildSalesReport(period);
-            } else if (reportType === 'stock') {
-                report = await buildStockReport();
-            } else if (reportType === 'customer-ledger') {
-                report = await buildLedgerReport(
-                    customerDueCollections,
-                    'customerName',
-                    'Customer Ledger Report',
-                    'Customers',
-                );
-            } else if (reportType === 'supplier-ledger') {
-                report = await buildLedgerReport(
-                    supplierDueCollections,
-                    'supplierName',
-                    'Supplier Ledger Report',
-                    'Suppliers',
-                );
-            } else {
-                return res.status(400).json({ error: 'Invalid report type' });
-            }
+            // Send immediate response
+            res.json({ jobId, message: 'Report generation started' });
 
-            const { title, columns, rows, cards } = report;
+            // Start background process
+            (async () => {
+                try {
+                    const period = resolvePeriod(
+                        filterType,
+                        dateValue,
+                        startDateValue,
+                        endDateValue,
+                    );
 
-            if (outputFormat === 'pdf') {
-                // Totals are computed over every matching row so they remain
-                // correct even when the table itself is capped for the PDF.
-                const totals = computeColumnTotals(columns, rows);
+                    let report;
+                    if (reportType === 'sales') {
+                        report = await buildSalesReport(period);
+                    } else if (reportType === 'stock') {
+                        report = await buildStockReport();
+                    } else if (reportType === 'customer-ledger') {
+                        report = await buildLedgerReport(
+                            customerDueCollections,
+                            'customerName',
+                            'Customer Ledger Report',
+                            'Customers',
+                        );
+                    } else if (reportType === 'supplier-ledger') {
+                        report = await buildLedgerReport(
+                            supplierDueCollections,
+                            'supplierName',
+                            'Supplier Ledger Report',
+                            'Suppliers',
+                        );
+                    } else {
+                        jobs.set(jobId, { status: 'failed', error: 'Invalid report type' });
+                        return;
+                    }
 
-                let displayRows = rows;
-                let note = null;
-                if (rows.length > MAX_PDF_ROWS) {
-                    displayRows = rows.slice(0, MAX_PDF_ROWS);
-                    note = `Showing the first ${formatNumber(MAX_PDF_ROWS)} of ${formatNumber(rows.length)} records. Totals below cover all records. Narrow the date filter or download the Excel report for the complete list.`;
+                    const { title, columns, rows, cards } = report;
+                    let fileBuffer;
+                    let filename = `${reportType}-report.${outputFormat}`;
+                    let contentType = '';
+
+                    if (outputFormat === 'pdf') {
+                        const totals = computeColumnTotals(columns, rows);
+                        let displayRows = rows;
+                        let note = null;
+                        if (rows.length > MAX_PDF_ROWS) {
+                            displayRows = rows.slice(0, MAX_PDF_ROWS);
+                            note = `Showing the first ${formatNumber(MAX_PDF_ROWS)} of ${formatNumber(rows.length)} records. Totals below cover all records. Narrow the date filter or download the Excel report for the complete list.`;
+                        }
+
+                        const html = generateReportHtml(
+                            title,
+                            period.label,
+                            columns,
+                            displayRows,
+                            cards,
+                            { totals, note },
+                        );
+                        fileBuffer = await generatePDF(html);
+                        contentType = 'application/pdf';
+                    } else if (outputFormat === 'xlsx') {
+                        const totals = computeColumnTotals(columns, rows);
+                        const totalsRow =
+                            rows.length && totals.some((t) => t !== null)
+                                ? buildTotalsRow(columns, totals)
+                                : null;
+
+                        fileBuffer = generateExcelTable({
+                            title,
+                            columns,
+                            rows,
+                            totals: totalsRow,
+                        });
+                        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                    } else {
+                        jobs.set(jobId, { status: 'failed', error: 'Invalid format' });
+                        return;
+                    }
+
+                    // Write buffer to temp file
+                    const filePath = path.join(os.tmpdir(), `report-${jobId}.${outputFormat}`);
+                    await fs.promises.writeFile(filePath, fileBuffer);
+
+                    jobs.set(jobId, { 
+                        status: 'completed', 
+                        filePath, 
+                        filename,
+                        contentType
+                    });
+                } catch (error) {
+                    console.error(`Error in background report generation (job ${jobId}):`, error);
+                    jobs.set(jobId, { status: 'failed', error: error.message });
                 }
+            })(); // execute immediately but don't await
 
-                const html = generateReportHtml(
-                    title,
-                    period.label,
-                    columns,
-                    displayRows,
-                    cards,
-                    { totals, note },
-                );
-                const pdfBuffer = await generatePDF(html);
-                res.setHeader('Content-Type', 'application/pdf');
-                res.setHeader(
-                    'Content-Disposition',
-                    `attachment; filename=${reportType}-report.pdf`,
-                );
-                res.send(pdfBuffer);
-            } else if (outputFormat === 'xlsx') {
-                const totals = computeColumnTotals(columns, rows);
-                const totalsRow =
-                    rows.length && totals.some((t) => t !== null)
-                        ? buildTotalsRow(columns, totals)
-                        : null;
-
-                const finalBuffer = generateExcelTable({
-                    title,
-                    columns,
-                    rows,
-                    totals: totalsRow,
-                });
-                res.setHeader(
-                    'Content-Type',
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                );
-                res.setHeader(
-                    'Content-Disposition',
-                    `attachment; filename=${reportType}-report.xlsx`,
-                );
-                res.send(finalBuffer);
-            } else {
-                res.status(400).json({ error: 'Invalid format' });
-            }
         } catch (error) {
-            console.error('Error generating report:', error);
+            console.error('Error starting report generation:', error);
             res.status(500).json({ error: error.message });
         }
+    });
+
+    app.get('/api/reports/status/:jobId', (req, res) => {
+        const jobId = req.params.jobId;
+        const job = jobs.get(jobId);
+        
+        if (!job) {
+            return res.status(404).json({ error: 'Job not found or expired' });
+        }
+
+        if (job.status === 'completed') {
+            res.json({ 
+                status: 'completed', 
+                downloadUrl: `/api/reports/download/${jobId}` 
+            });
+        } else {
+            res.json({ status: job.status, error: job.error });
+        }
+    });
+
+    app.get('/api/reports/download/:jobId', (req, res) => {
+        const jobId = req.params.jobId;
+        const job = jobs.get(jobId);
+
+        if (!job || job.status !== 'completed') {
+            return res.status(404).json({ error: 'File not ready or expired' });
+        }
+
+        res.setHeader('Content-Type', job.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
+
+        const fileStream = fs.createReadStream(job.filePath);
+        fileStream.pipe(res);
+
+        // Delete file and job after sending
+        fileStream.on('end', () => {
+            fs.unlink(job.filePath, (err) => {
+                if (err) console.error('Failed to delete temp file:', err);
+            });
+            jobs.delete(jobId);
+        });
+        
+        fileStream.on('error', (err) => {
+            console.error('Error streaming file:', err);
+            if (!res.headersSent) {
+                res.status(500).send('Error downloading file');
+            }
+        });
     });
 };
 

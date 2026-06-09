@@ -25,33 +25,41 @@ const ReportsPage = () => {
                     dateValue,
                     startDateValue,
                     endDateValue,
-                },
-                {
-                    responseType: 'blob', // Important for receiving binary data
-                },
+                }
             );
 
-            // Create a blob from the response
-            const blob = new Blob([response.data], {
-                type:
-                    format === 'pdf'
-                        ? 'application/pdf'
-                        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `${reportType}-report.${format}`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            toast.success(
-                `${format.toUpperCase()} report generated successfully!`,
-            );
+            const { jobId, message } = response.data;
+            toast.info(message || "Report generation started. This may take a while...");
+
+            // Poll the status
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await axiosSecure.get(`/api/reports/status/${jobId}`);
+                    const { status, downloadUrl, error } = statusRes.data;
+
+                    if (status === 'completed') {
+                        clearInterval(pollInterval);
+                        setIsGenerating(false);
+                        toast.success(`${format.toUpperCase()} report is ready! Downloading...`);
+                        
+                        const apiBaseUrl = import.meta.env.VITE_API_URL || '';
+                        window.location.href = `${apiBaseUrl}${downloadUrl}`;
+                    } else if (status === 'failed') {
+                        clearInterval(pollInterval);
+                        setIsGenerating(false);
+                        toast.error(`Report generation failed: ${error || 'Unknown error'}`);
+                    }
+                } catch (pollErr) {
+                    console.error('Error polling report status:', pollErr);
+                    clearInterval(pollInterval);
+                    setIsGenerating(false);
+                    toast.error('Failed to check report status.');
+                }
+            }, 3000);
+
         } catch (error) {
-            console.error('Error generating report:', error);
-            toast.error('Failed to generate report.');
-        } finally {
+            console.error('Error starting report generation:', error);
+            toast.error('Failed to start report generation.');
             setIsGenerating(false);
         }
     };
