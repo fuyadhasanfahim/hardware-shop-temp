@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c routes/reportRoutes.js)",
+      "Bash(node -c utils/pdfGenerator.js)",
+      "Bash(node -e ' *)",
+      "Bash(node -c utils/excelGenerator.js)",
+      "Bash(node scratch/reportPerfTest.js)",
+      "Bash(curl -s -o /dev/null -w \"root status: %{http_code}\\\\n\" http://localhost:9000/)",
+      "Bash(curl -s -D - -o cl.pdf -w \"\\\\nTIME: %{time_total}s SIZE: %{size_download}\\\\n\" -X POST http://localhost:9000/api/reports/generate -H \"Content-Type: application/json\" -H \"Origin: http://localhost:5173\" -d '{\"reportType\":\"customer-ledger\",\"format\":\"pdf\",\"filterType\":\"all\"}')",
+      "Bash(xxd)",
+      "Bash(curl -s -D - -o sales.pdf -w \"\\\\nTIME: %{time_total}s SIZE: %{size_download} HTTP: %{http_code}\\\\n\" -X POST http://localhost:9000/api/reports/generate -H \"Content-Type: application/json\" -H \"Origin: http://localhost:5173\" -d '{\"reportType\":\"sales\",\"format\":\"pdf\",\"filterType\":\"all\"}')",
+      "Bash(curl -s -o s2024.pdf -w \"TIME: %{time_total}s SIZE: %{size_download} HTTP: %{http_code}\\\\n\" -X POST http://localhost:9000/api/reports/generate -H \"Content-Type: application/json\" -d '{\"reportType\":\"sales\",\"format\":\"pdf\",\"filterType\":\"yearly\",\"dateValue\":\"2024\"}')",
+      "Bash(node -c routes/analyticsRoutes.js)",
+      "Bash(curl -s -o sa.pdf -w \"TIME: %{time_total}s SIZE: %{size_download} HTTP: %{http_code}\\\\n\" -X POST http://localhost:9000/api/reports/generate -H \"Content-Type: application/json\" -d '{\"reportType\":\"sales\",\"format\":\"pdf\",\"filterType\":\"all\"}')",
+      "Bash(curl -s -o sa.xlsx -w \"TIME: %{time_total}s SIZE: %{size_download} HTTP: %{http_code}\\\\n\" -X POST http://localhost:9000/api/reports/generate -H \"Content-Type: application/json\" -d '{\"reportType\":\"sales\",\"format\":\"xlsx\",\"filterType\":\"all\"}')",
+      "Bash(curl -s -o /dev/null -w \"TIME: %{time_total}s HTTP: %{http_code}\\\\n\" http://localhost:9000/api/analytics/summary)",
+      "Bash(curl -s http://localhost:9000/api/analytics/summary)",
+      "Bash(node scratch/inspectState.js)",
+      "Bash(node scratch/backupDb.js)",
+      "Bash(node scratch/generateBackfill.js)",
+      "Bash(node scratch/generateBackfill.js --write)",
+      "Bash(node scratch/restoreDb.js 2026-06-10T15-07-19-786Z)",
+      "Bash(node scratch/verifyLedgers.js)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const{EJSON}=require\\('bson'\\);const c=EJSON.parse\\(fs.readFileSync\\('customerDueList.json','utf8'\\)\\);const s=EJSON.parse\\(fs.readFileSync\\('stockList.json','utf8'\\)\\);console.log\\('orig customerDue<0:',c.filter\\(x=>Number\\(x.dueAmount\\)<0\\).length\\);console.log\\('orig stock qty<0:',s.filter\\(x=>Number\\(x.purchaseQuantity\\)<0\\).length\\);\")"
+    ]
+  }
+}
